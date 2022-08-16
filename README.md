@@ -10,6 +10,7 @@ Generically, a recipe is run with
 
 ```bash
 $PATH_TO_O2TUNER/o2tuner/src/o2tuner/run.py --config <a_recipe_from_here> [--work-dir <dir/where/to/run/in]
+```
 
 ## Write your own recipe
 
