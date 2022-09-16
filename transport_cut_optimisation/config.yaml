@@ -119,7 +119,7 @@ stages_optimisation:
         deps:
             - baseline_hits
 
-stages_evaluate:
+stages_evaluation:
     evaluate:
         file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/evaluate.py
         entrypoint: evaluate
