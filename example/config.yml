@@ -1,0 +1,5 @@
+stages_user:
+  example_task:
+    python:
+      file: /Users/mconcas/repos/o2tunerRecipes/example/example.py
+      entrypoint: run_example
