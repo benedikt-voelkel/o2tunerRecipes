@@ -45,12 +45,12 @@ global_config: &global_config
         - HALL
         - PIPE
         - CAVE
-        #- MAG
-        #- DIPO
-        #- ABSO
-        #- SHIL
-        #- FRAME
-        #- COMP
+        - MAG
+        - DIPO
+        - ABSO
+        - SHIL
+        - FRAME
+        - COMP
     parameters_to_optimise: # choose from REPLAY_CUT_PARAMETERS
         - CUTGAM
         - CUTELE
@@ -77,29 +77,7 @@ global_config: &global_config
     baseline_dir: &baseline_dir baseline                        # the baseline directory
 
 
-stages_user:
-    reference_sim: # the reference run
-        python:
-            file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/reference.py
-            entrypoint: run_reference
-        cwd: *reference_dir
-        config: *global_config
-
-    baseline_sim: # basline run to exclude any RNG effects during hit extraction
-        python:
-            file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/reference.py
-            entrypoint: run_baseline
-        cwd: *baseline_dir
-        deps:
-            - reference_sim
-        config: *global_config
-
-    baseline_hits: # extract hits for the baseline simulation
-        cmd: "root -l -b -q ${O2_ROOT}/share/macro/analyzeHits.C"
-        log_file: *hits_file
-        deps:
-            - baseline_sim
-        cwd: *baseline_dir
+stages_user: null
 
 stages_optimisation:
     optimisation_genetic_baseline:
