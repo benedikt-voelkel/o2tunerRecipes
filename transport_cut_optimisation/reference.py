@@ -7,52 +7,14 @@ from os.path import join
 from os import environ
 import argparse
 
+import numpy as np
+
 from o2tuner.system import run_command
 from o2tuner.io import parse_json, dump_yaml
 from o2tuner.config import resolve_path
 
 
 MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
-
-def digest_parameters(path):
-    """
-    Extracts the medium ID - module mapping (seperately for detectors and passive modules).
-    In addition, we get a mapping from an index to a medium ID.
-    Finally, the reference parameters are extracted as a list accorsing to the index mapping.
-    """
-    reference_params = []
-    params = parse_json(path)
-
-    index_to_med_id = []
-    passive_medium_ids_map = {}
-    # pylint: disable=duplicate-code
-    detector_medium_ids_map = {}
-    for module, batches in params.items():
-        if module in ["default", "enableSpecialCuts", "enableSpecialProcesses"]:
-            continue
-
-        for batch in batches:
-            med_id = batch["global_id"]
-            # according to which modules are recognised by this script
-            if module in O2PASSIVE:
-                if module not in passive_medium_ids_map:
-                    passive_medium_ids_map[module] = []
-                passive_medium_ids_map[module].append(med_id)
-            elif module in O2DETECTORS:
-                if module not in detector_medium_ids_map:
-                    detector_medium_ids_map[module] = []
-                detector_medium_ids_map[module].append(med_id)
-            else:
-                continue
-
-            cuts_read = batch.get("cuts", {})
-            cuts_append = [cuts_read.get(rcp, -1.) for rcp in REPLAY_CUT_PARAMETERS]
-
-            index_to_med_id.append(med_id)
-            reference_params.extend(cuts_append)
-
-    return reference_params, index_to_med_id, passive_medium_ids_map, detector_medium_ids_map
-
 
 def run_reference(config):
     """

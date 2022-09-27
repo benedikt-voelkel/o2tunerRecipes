@@ -61,7 +61,7 @@ def extract_avg_steps(path):
     return sum(steps_orig) / len(steps_orig), sum(steps_skipped) / len(steps_skipped)
 
 
-def loss_and_metrics(hits_path, hits_ref_path, step_path, o2_detectors, rel_hits_cutoff):
+def loss_and_metrics(hits_path, hits_ref_path, step_path, o2_detectors, rel_hits_cutoff, penalty_below):
     """
     Compute the loss and return steps and hits relative to the baseline
     """
@@ -75,7 +75,7 @@ def loss_and_metrics(hits_path, hits_ref_path, step_path, o2_detectors, rel_hits
 
     loss = rel_steps**2
     for rvh in rel_hits_valid:
-        penalty = 2 if rvh < rel_hits_cutoff else 1
+        penalty = (1 + rel_hits_cutoff - rvh) if rvh < rel_hits_cutoff else 1
         loss += penalty * (rel_hits_cutoff - rvh)**2
 
     loss = loss / (len(rel_hits_valid) + 1)
@@ -137,9 +137,11 @@ def objective_default(trial, config):
     """
     The central objective funtion for the optimisation
     """
+    batches = config["batches"]
+    batch_id = np.random.randint(0, batches)
     
     # Get some info from the reference dir
-    reference_dir = resolve_path(config["reference_dir"])
+    reference_dir = resolve_path(f"{config['reference_dir']}_{batch_id}")
     index_to_med_id = parse_yaml(join(reference_dir, config["index_to_med_id"]))
     passive_medium_ids_map = parse_yaml(join(reference_dir, config["passive_medium_ids_map"]))
     detector_medium_ids_map = parse_yaml(join(reference_dir, config["detector_medium_ids_map"]))
@@ -170,7 +172,7 @@ def objective_default(trial, config):
     dump_json(space_drawn_o2, param_file_path_o2)
 
     # replay the simulation
-    baseline_dir = resolve_path(config["baseline_dir"])
+    baseline_dir = resolve_path(f"{config['baseline_dir']}_{batch_id}")
     kine_file = join(reference_dir, "o2sim_Kine.root")
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
     cut_file_param = ";MCReplayParam.cutFile=cuts.json"
@@ -185,7 +187,7 @@ def objective_default(trial, config):
 
     # compute the loss and further metrics...
     baseline_hits_file = join(baseline_dir, "hits.dat")
-    loss, rel_steps, rel_hits = loss_and_metrics(hit_file, baseline_hits_file, sim_file, config["O2DETECTORS"], config["rel_hits_cutoff"])
+    loss, rel_steps, rel_hits = loss_and_metrics(hit_file, baseline_hits_file, sim_file, config["O2DETECTORS"], config["rel_hits_cutoff"], config["penalty_below"])
 
     # ...and annotate drawn space and metrics to trial so we can re-use it
     annotate_trial(trial, "space", list(this_array))

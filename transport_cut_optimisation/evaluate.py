@@ -81,7 +81,7 @@ def evaluate(inspectors, config):
         plot_steps_hits_loss(insp, config)
         # at the same time, extract mapping of optuna parameter names to actual meaningful names related to the task at hand
         counter = 0
-        index_to_med_id = parse_yaml(join(resolve_path(config["reference_dir"]), config["index_to_med_id"]))
+        index_to_med_id = parse_yaml(join(resolve_path(f"{config['reference_dir']}_0"), config["index_to_med_id"]))
         for med_id in index_to_med_id:
             for param in config["REPLAY_CUT_PARAMETERS"]:
                 map_params[str(counter)] = f"{param} of {med_id}"
