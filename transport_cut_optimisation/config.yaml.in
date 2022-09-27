@@ -77,7 +77,17 @@ global_config: &global_config
     baseline_dir: &baseline_dir baseline                        # the baseline directory
 
 
-stages_user: null
+stages_user: 
+    evaluate_params:
+        python:
+            entrypoint: param_plots
+            file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/closure.py
+        config:
+            <<: *global_config
+            opt_dir: optimisation_genetic_baseline
+            ref_dir: reference_0
+        deps:
+            - optimisation_genetic_baseline
 
 stages_optimisation:
     optimisation_genetic_baseline:
@@ -90,7 +100,7 @@ stages_optimisation:
             args:
                 population_size: 5
         study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
-            name: optimisation_genetic_baseline_test
+            name: optimisation_genetic_baseline
             storage: mysql://USER:PASSWORD@localhost/DATABASE
         cwd: optimisation_genetic_baseline
         config: *global_config
