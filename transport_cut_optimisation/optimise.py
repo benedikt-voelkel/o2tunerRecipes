@@ -12,7 +12,7 @@ import numpy as np
 from o2tuner.system import run_command
 from o2tuner.utils import annotate_trial
 from o2tuner.optimise import optimise
-from o2tuner.io import parse_json, dump_json, parse_yaml, exists_file, remove_dir
+from o2tuner.io import parse_json, dump_json, parse_yaml, exists_file
 from o2tuner.optimise import needs_cwd
 from o2tuner.config import resolve_path
 
@@ -146,6 +146,14 @@ def objective_default(trial, config):
     passive_medium_ids_map = parse_yaml(join(reference_dir, config["passive_medium_ids_map"]))
     detector_medium_ids_map = parse_yaml(join(reference_dir, config["detector_medium_ids_map"]))
     o2_medium_params_reference = join(reference_dir, config["o2_medium_params_reference"])
+    ref_params_array = parse_yaml(join(reference_dir, config["reference_params"]))
+    previous_opt_values = config.get("previous_opt_dir", None)
+    if previous_opt_values:
+        best_trial_dir = resolve_path(previous_opt_values)
+        best_trial_dir_rel = parse_yaml(join(best_trial_dir, "o2tuner_optimisation_summary.yaml"))["best_trial_cwd"]
+        best_trial_dir = join(best_trial_dir, best_trial_dir_rel)
+        previous_opt_values = parse_yaml(join(best_trial_dir, config["opt_params"]))
+
 
     # make params we want to have
     mask = mask_params(config["parameters_to_optimise"], index_to_med_id, config["REPLAY_CUT_PARAMETERS"])
@@ -155,11 +163,18 @@ def objective_default(trial, config):
     mask = mask & mask_passive
 
     # get next estimation for parameters
-    this_array = np.full((len(mask,)), -1.)
+    this_array = np.array(previous_opt_values) if previous_opt_values else np.full((len(mask,)), -1.)
     for i, param in enumerate(mask):
         if not param:
             continue
-        this_array[i] = trial.suggest_loguniform(f"{i}", config["search_value_low"], config["search_value_up"])
+        low = ref_params_array[i]
+        up = config["search_value_up"]
+        if low < 0:
+            print(f"Lower value was {low}")
+            low = config["search_value_low"]
+        if low >= up:
+            up = low * 10
+        this_array[i] = trial.suggest_loguniform(f"{i}", low, up)
     space_drawn = arrange_to_space(this_array, len(config["REPLAY_CUT_PARAMETERS"]), index_to_med_id)
 
     # dump the JSONs. The first is digested by the MCReplay engine...
@@ -175,7 +190,7 @@ def objective_default(trial, config):
     baseline_dir = resolve_path(f"{config['baseline_dir']}_{batch_id}")
     kine_file = join(reference_dir, "o2sim_Kine.root")
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
-    cut_file_param = ";MCReplayParam.cutFile=cuts.json"
+    cut_file_param = ";MCReplayParam.cutFile=cuts.json;MCReplayParam.blockParamSetting=true"
     cmd = f'o2-sim-serial -n {config["events"]} -g extkinO2 --extKinFile {kine_file} -e MCReplay --skipModules ZDC ' \
           f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file}{cut_file_param}"'
     _, sim_file = run_command(cmd, log_file="sim.log")
@@ -193,6 +208,7 @@ def objective_default(trial, config):
     annotate_trial(trial, "space", list(this_array))
     annotate_trial(trial, "rel_steps", rel_steps)
     annotate_trial(trial, "rel_hits", rel_hits)
+    dump_yaml(list(this_array), config["opt_params"])
 
     # remove all the artifacts we don't need to keep space
     #remove_dir(cwd, keep=["hits.dat", "cuts.json", "cuts_o2.json", "sim.log"])

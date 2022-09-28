@@ -7,8 +7,6 @@ from os.path import join
 from os import environ
 import argparse
 
-import numpy as np
-
 from o2tuner.system import run_command
 from o2tuner.io import parse_json, dump_yaml
 from o2tuner.config import resolve_path
@@ -41,6 +39,7 @@ def run_reference(config):
     passive_medium_ids_map = {}
     # pylint: disable=duplicate-code
     detector_medium_ids_map = {}
+    default_cuts = params["default"]["cuts"]
     for module, batches in params.items():
         if module in ["default", "enableSpecialCuts", "enableSpecialProcesses"]:
             continue
@@ -60,7 +59,12 @@ def run_reference(config):
                 continue
 
             cuts_read = batch.get("cuts", {})
-            cuts_append = [cuts_read.get(rcp, -1.) for rcp in replay_cut_parameters]
+            cuts_append = []
+            for rcp in replay_cut_parameters:
+                value = cuts_read.get(rcp, -1)
+                if value < 0:
+                    value = default_cuts[rcp]
+                cuts_append.append(value)
 
             index_to_med_id.append(med_id)
             reference_params.extend(cuts_append)
@@ -78,7 +82,7 @@ def run_baseline(config):
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
 
     cmd = f'o2-sim-serial -n {config["events"]} -g extkinO2 --extKinFile {kine_file} -e MCReplay --skipModules ZDC ' \
-          f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file}"'
+          f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file};MCReplayParam.blockParamSetting=true"'
     run_command(cmd, log_file="sim.log")
     return True
 
