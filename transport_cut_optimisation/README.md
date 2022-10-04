@@ -20,6 +20,6 @@ The number of batches means that the reference is repeated that many times so th
 
 Done with
 ```bash
-python ${O2TUNER}/src/o2tuner/run.py -c <path/to/recipe_dir/config.yaml> -d <workdir>
+o2tuner -c <path/to/recipe_dir/config.yaml> -w <workdir>
 ```
 

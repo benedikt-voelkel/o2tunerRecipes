@@ -148,7 +148,7 @@ def run_on_batch(batch_id, config):
     baseline_dir = resolve_path(f"{config['baseline_dir']}_{batch_id}")
     kine_file = join(reference_dir, "o2sim_Kine.root")
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
-    cut_file_param = ";MCReplayParam.cutFile=cuts.json;MCReplayParam.blockParamSetting=true"
+    cut_file_param = ";MCReplayParam.cutFile=cuts.json"
     cmd = f'o2-sim-serial -n {config["events"]} -g extkinO2 --extKinFile {kine_file} -e MCReplay --skipModules ZDC ' \
           f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file}{cut_file_param}"'
     _, sim_file = run_command(cmd, log_file="sim.log")
