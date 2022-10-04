@@ -54,7 +54,11 @@ def generate_config(recipe_dir, n_batches):
         opt_deps.append(f"baseline_hits_{i}")
 
     config_in["stages_user"] = user_stages
-    config_in["stages_optimisation"]["optimisation_genetic_baseline"]["deps"] = opt_deps
+
+    for name, stage in config_in["stages_optimisation"].items():
+        stage["config"]["batches"] = n_batches
+        if not "deps" in stage:
+            stage["deps"] = opt_deps
 
     dump_yaml(config_in, join(recipe_dir, "config.yaml"))
     return 0

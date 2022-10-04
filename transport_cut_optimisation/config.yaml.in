@@ -1,7 +1,7 @@
 global_config: &global_config
     engine: TGeant4
     generator: pythia8pp
-    events: 10
+    events: 50
     O2PASSIVE: # all passive modules there are (static)
         - HALL
         - PIPE
@@ -69,12 +69,16 @@ global_config: &global_config
     detector_medium_ids_map: detector_medium_ids_map.yaml       # YAML to serialise the mapping of medium IDs to each detector
     reference_params: reference_params.yaml                     # YAML to serialise the numpy array of parameters into
     index_to_med_id: index_to_med_id.yaml                       # YAML to serialise and map each medium ID to a global ID
+    opt_params: current_params.yaml                             # current params just as a list in YAML
     rel_hits_cutoff: 0.95                                       # desired minimum drop of relative ratio of hits
     search_value_low: 0.00001                                   # the lower bound of values to be drawn for each parameter
     search_value_up: 1.                                         # the upper bound of values to be drawn for each parameter
+    penalty_below: 2                                            # apply an additional penalty factor when the hits are below, this is smooth
+    opt_values: opt_values.yaml                                 # simply the list of suggested values of a trial
     hits_log_file: &hits_file hits.dat                          # common name of file to pipe hit evaluation into (when using O2's analyzeHits.C macro)
     reference_dir: &reference_dir reference                     # the reference directory
     baseline_dir: &baseline_dir baseline                        # the baseline directory
+    use_all_batches: true                                       # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
 
 
 stages_user: 
@@ -84,36 +88,104 @@ stages_user:
             file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/closure.py
         config:
             <<: *global_config
-            opt_dir: optimisation_genetic_baseline
+            opt_dir: optimisation
             ref_dir: reference_0
         deps:
-            - optimisation_genetic_baseline
+            - optimisation
+    rz_params:
+        python:
+            entrypoint: param_rz
+            file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/closure.py
+        config:
+            <<: *global_config
+            opt_dir: optimisation
+            ref_dir: reference_0
+            heatmap_min: 0.00001                                # The minimun value for the R-Z heatmap
+            heatmap_max: 1.                                     # The maximum for the R-Z heatmap
+            n_voxels: 20                                        # The number of voxels in x, y, z respectively
+        deps:
+            - optimisation
 
 stages_optimisation:
-    optimisation_genetic_baseline:
+    optimisation:
         file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/optimise.py
         objective: objective_default
         jobs: 2     # desired number of jobs
         trials: 10  # desired number of trials
-        sampler:    # use genetic sampler (leave that and it will use TPE as default)
-            name: genetic
-            args:
-                population_size: 5
         study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
-            name: optimisation_genetic_baseline
+            name: optimisation
             storage: mysql://USER:PASSWORD@localhost/DATABASE
-        cwd: optimisation_genetic_baseline
+        cwd: optimisation
         config: *global_config
+
+    optimisation_PIPE_SHIL:
+        file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/optimise.py
+        objective: objective_default
+        jobs: 2     # desired number of jobs
+        trials: 10  # desired number of trials
+        study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+            name: optimisation_PIPE_SHIL
+            storage: sqlite:///test.db
+        config:
+            <<: *global_config
+            modules_to_optimise:
+                - PIPE
+                - SHIL
+
+    optimisation_DIPO_ABSO_COMP:
+        file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/optimise.py
+        objective: objective_default
+        jobs: 2     # desired number of jobs
+        trials: 10  # desired number of trials
+        study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+            name: optimisation_DIPO_ABSO_COMP
+            storage: sqlite:///test.db
+        config:
+            <<: *global_config
+            previous_opt_dir: optimisation_PIPE_SHIL
+            modules_to_optimise:
+                - DIPO
+                - ABSO
+                - COMP
         deps:
-            - baseline_hits
+            - optimisation_PIPE_SHIL
+
+    optimisation_CAVE_HALL_FRAME_MAG:
+        file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/optimise.py
+        objective: objective_default
+        jobs: 2     # desired number of jobs
+        trials: 10  # desired number of trials
+        study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+            name: optimisation_CAVE_HALL_FRAME_MAG
+            storage: sqlite:///test.db
+        config:
+            <<: *global_config
+            previous_opt_dir: optimisation_DIPO_ABSO_COMP
+            modules_to_optimise:
+                - CAVE
+                - HALL
+                - FRAME
+                - MAG
+        deps:
+            - optimisation_DIPO_ABSO_COMP
 
 stages_evaluation:
     evaluate:
         file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/evaluate.py
         entrypoint: evaluate
         optimisations:
-            - optimisation_genetic_baseline
+            - optimisation
         config: *global_config
         deps:
-            - optimisation_genetic_baseline
+            - optimisation
+    evaluate_step_by_step:
+        config: *global_config
+        deps:
+            - optimisation_CAVE_HALL_FRAME_MAG
+        entrypoint: evaluate
+        file: /PATH/TO/o2tunerRecipes/transport_cut_optimisation/evaluate.py
+        optimisations:
+            - optimisation_PIPE_SHIL
+            - optimisation_DIPO_ABSO_COMP
+            - optimisation_CAVE_HALL_FRAME_MAG
 
