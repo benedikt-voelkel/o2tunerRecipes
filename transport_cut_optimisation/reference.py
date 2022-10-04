@@ -82,7 +82,7 @@ def run_baseline(config):
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
 
     cmd = f'o2-sim-serial -n {config["events"]} -g extkinO2 --extKinFile {kine_file} -e MCReplay --skipModules ZDC ' \
-          f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file};MCReplayParam.blockParamSetting=true"'
+          f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file}"'
     run_command(cmd, log_file="sim.log")
     return True
 
