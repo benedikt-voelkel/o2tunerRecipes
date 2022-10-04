@@ -12,7 +12,7 @@ import numpy as np
 from o2tuner.system import run_command
 from o2tuner.utils import annotate_trial
 from o2tuner.optimise import optimise
-from o2tuner.io import parse_json, dump_json, parse_yaml, exists_file
+from o2tuner.io import parse_json, dump_json, dump_yaml, parse_yaml, exists_file
 from o2tuner.optimise import needs_cwd
 from o2tuner.config import resolve_path
 
@@ -61,25 +61,31 @@ def extract_avg_steps(path):
     return sum(steps_orig) / len(steps_orig), sum(steps_skipped) / len(steps_skipped)
 
 
-def loss_and_metrics(hits_path, hits_ref_path, step_path, o2_detectors, rel_hits_cutoff, penalty_below):
+def compute_metrics(hits_path, hits_ref_path, step_path, o2_detectors):
     """
     Compute the loss and return steps and hits relative to the baseline
     """
     hits_opt = extract_hits(hits_path, o2_detectors, {n: i for i, n in enumerate(o2_detectors)})
     hits_ref = extract_hits(hits_ref_path, o2_detectors, {n: i for i, n in enumerate(o2_detectors)})
     rel_hits = [h / r if (h is not None and r is not None and r > 0) else None for h, r in zip(hits_opt, hits_ref)]
-    rel_hits_valid = [rh for rh in rel_hits if rh is not None]
 
     steps = extract_avg_steps(step_path)
     rel_steps = 1 - (steps[1] / steps[0])
 
+    return rel_steps, rel_hits
+
+
+def compute_loss(rel_hits, rel_steps, rel_hits_cutoff, penalty_below):
+    """
+    Compute the loss and return steps and hits relative to the baseline
+    """
+    rel_hits_valid = [rh for rh in rel_hits if rh is not None]
     loss = rel_steps**2
     for rvh in rel_hits_valid:
-        penalty = (1 + rel_hits_cutoff - rvh) if rvh < rel_hits_cutoff else 1
+        penalty = (1 + penalty_below * (rel_hits_cutoff - rvh)) if rvh < rel_hits_cutoff else 1
         loss += penalty * (rel_hits_cutoff - rvh)**2
 
-    loss = loss / (len(rel_hits_valid) + 1)
-    return loss, rel_steps, rel_hits
+    return loss / (len(rel_hits_valid) + 1)
 
 
 def mask_params(params, index_to_med_id, replay_cut_parameters):
@@ -132,59 +138,11 @@ def make_o2_format(space_drawn, ref_params_json, passive_medium_ids_map, replay_
                 batch["cuts"] = dict(zip(replay_cut_parameters, space_drawn[med_id]))
     return params
 
-@needs_cwd
-def objective_default(trial, config):
-    """
-    The central objective funtion for the optimisation
-    """
-    batches = config["batches"]
-    batch_id = np.random.randint(0, batches)
-    
-    # Get some info from the reference dir
+
+def run_on_batch(batch_id, config):
     reference_dir = resolve_path(f"{config['reference_dir']}_{batch_id}")
-    index_to_med_id = parse_yaml(join(reference_dir, config["index_to_med_id"]))
-    passive_medium_ids_map = parse_yaml(join(reference_dir, config["passive_medium_ids_map"]))
-    detector_medium_ids_map = parse_yaml(join(reference_dir, config["detector_medium_ids_map"]))
     o2_medium_params_reference = join(reference_dir, config["o2_medium_params_reference"])
     ref_params_array = parse_yaml(join(reference_dir, config["reference_params"]))
-    previous_opt_values = config.get("previous_opt_dir", None)
-    if previous_opt_values:
-        best_trial_dir = resolve_path(previous_opt_values)
-        best_trial_dir_rel = parse_yaml(join(best_trial_dir, "o2tuner_optimisation_summary.yaml"))["best_trial_cwd"]
-        best_trial_dir = join(best_trial_dir, best_trial_dir_rel)
-        previous_opt_values = parse_yaml(join(best_trial_dir, config["opt_params"]))
-
-
-    # make params we want to have
-    mask = mask_params(config["parameters_to_optimise"], index_to_med_id, config["REPLAY_CUT_PARAMETERS"])
-    mask_passive = unmask_modules(config["modules_to_optimise"], config["REPLAY_CUT_PARAMETERS"],
-                                  index_to_med_id, passive_medium_ids_map, detector_medium_ids_map)
-
-    mask = mask & mask_passive
-
-    # get next estimation for parameters
-    this_array = np.array(previous_opt_values) if previous_opt_values else np.full((len(mask,)), -1.)
-    for i, param in enumerate(mask):
-        if not param:
-            continue
-        low = ref_params_array[i]
-        up = config["search_value_up"]
-        if low < 0:
-            print(f"Lower value was {low}")
-            low = config["search_value_low"]
-        if low >= up:
-            up = low * 10
-        this_array[i] = trial.suggest_loguniform(f"{i}", low, up)
-    space_drawn = arrange_to_space(this_array, len(config["REPLAY_CUT_PARAMETERS"]), index_to_med_id)
-
-    # dump the JSONs. The first is digested by the MCReplay engine...
-    param_file_path = "cuts.json"
-    dump_json(space_drawn, param_file_path)
-
-    # ...and the second can be used to directly to O2 --confKeyValues
-    space_drawn_o2 = make_o2_format(space_drawn, o2_medium_params_reference, passive_medium_ids_map, config["REPLAY_CUT_PARAMETERS"])
-    param_file_path_o2 = "cuts_o2.json"
-    dump_json(space_drawn_o2, param_file_path_o2)
 
     # replay the simulation
     baseline_dir = resolve_path(f"{config['baseline_dir']}_{batch_id}")
@@ -202,15 +160,87 @@ def objective_default(trial, config):
 
     # compute the loss and further metrics...
     baseline_hits_file = join(baseline_dir, "hits.dat")
-    loss, rel_steps, rel_hits = loss_and_metrics(hit_file, baseline_hits_file, sim_file, config["O2DETECTORS"], config["rel_hits_cutoff"], config["penalty_below"])
+    return compute_metrics(hit_file, baseline_hits_file, sim_file, config["O2DETECTORS"])
 
+
+@needs_cwd
+def objective_default(trial, config):
+    """
+    The central objective funtion for the optimisation
+    """
+    # Get some info from the reference dir
+    reference_dir_any = resolve_path(f"{config['reference_dir']}_0")
+    index_to_med_id = parse_yaml(join(reference_dir_any, config["index_to_med_id"]))
+    passive_medium_ids_map = parse_yaml(join(reference_dir_any, config["passive_medium_ids_map"]))
+    detector_medium_ids_map = parse_yaml(join(reference_dir_any, config["detector_medium_ids_map"]))
+    o2_medium_params_reference = join(reference_dir_any, config["o2_medium_params_reference"])
+    ref_params_array = parse_yaml(join(reference_dir_any, config["reference_params"]))
+
+    # Get the new cut parameters for this trial
+    previous_opt_values = config.get("previous_opt_dir", None)
+    if previous_opt_values:
+        best_trial_dir = resolve_path(previous_opt_values)
+        best_trial_dir_rel = parse_yaml(join(best_trial_dir, "o2tuner_optimisation_summary.yaml"))["best_trial_cwd"]
+        best_trial_dir = join(best_trial_dir, best_trial_dir_rel)
+        previous_opt_values = parse_yaml(join(best_trial_dir, config["opt_params"]))
+
+    # make param mask so to set only those parameters requested
+    mask = mask_params(config["parameters_to_optimise"], index_to_med_id, config["REPLAY_CUT_PARAMETERS"])
+    mask_passive = unmask_modules(config["modules_to_optimise"], config["REPLAY_CUT_PARAMETERS"],
+                                  index_to_med_id, passive_medium_ids_map, detector_medium_ids_map)
+    mask = mask & mask_passive
+
+    # draw/aka "suggest" parameters
+    this_array = np.array(previous_opt_values) if previous_opt_values else np.full((len(mask,)), -1.)
+    for i, param in enumerate(mask):
+        if not param:
+            continue
+        low = ref_params_array[i]
+        up = config["search_value_up"]
+        if low < 0:
+            print(f"Lower value was {low}")
+            low = config["search_value_low"]
+        if low >= up:
+            up = low * 10
+        this_array[i] = trial.suggest_float(f"{i}", low, up, log=True)
+    space_drawn = arrange_to_space(this_array, len(config["REPLAY_CUT_PARAMETERS"]), index_to_med_id)
+
+    # dump the JSONs. The first is digested by the MCReplay engine...
+    param_file_path = "cuts.json"
+    dump_json(space_drawn, param_file_path)
+    # ...and the second can be used to directly to O2 --confKeyValues
+    space_drawn_o2 = make_o2_format(space_drawn, o2_medium_params_reference, passive_medium_ids_map, config["REPLAY_CUT_PARAMETERS"])
+    param_file_path_o2 = "cuts_o2.json"
+    dump_json(space_drawn_o2, param_file_path_o2)
+    
+    batches = config["batches"]
+    rel_steps_avg = 0
+    rel_hits_avg = [0] * len(config["O2DETECTORS"])
+    if config["use_all_batches"]:
+        # EITHER we always run over all produced reference batches...
+        rel_hits_has_hits = [0] * len(config["O2DETECTORS"])
+        for i in range(batches):
+            rel_steps, rel_hits = run_on_batch(i, config)
+            rel_steps_avg += rel_steps
+            for j, hits in enumerate(rel_hits):
+                if hits is not None:
+                    rel_hits_avg[j] += hits
+                    rel_hits_has_hits[j] += 1
+        for j, (hits, has_hits) in enumerate(zip(rel_hits_avg, rel_hits_has_hits)):
+            if has_hits:
+                rel_hits_avg[j] = hits / has_hits
+        rel_steps_avg /= batches
+    else:
+        # ...OR only one random batch
+        batch_id = np.random.randint(0, batches)
+        rel_steps_avg, rel_hits_avg = run_on_batch(batch_id, config)
+    
     # ...and annotate drawn space and metrics to trial so we can re-use it
     annotate_trial(trial, "space", list(this_array))
     annotate_trial(trial, "rel_steps", rel_steps)
     annotate_trial(trial, "rel_hits", rel_hits)
-    dump_yaml(list(this_array), config["opt_params"])
+    dump_yaml([float(value) for value in this_array], config["opt_params"])
 
     # remove all the artifacts we don't need to keep space
     #remove_dir(cwd, keep=["hits.dat", "cuts.json", "cuts_o2.json", "sim.log"])
-    return loss
-
+    return compute_loss(rel_hits_avg, rel_steps_avg, config["rel_hits_cutoff"], config["penalty_below"])

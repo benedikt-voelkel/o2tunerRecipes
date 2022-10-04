@@ -25,15 +25,19 @@ def plot_base(x, y, ax=None, title=None, **plot_kwargs):
     return ax
 
 
-def plot_steps_hits_loss(insp, config):
+def plot_steps_hits_loss(inspectors, config):
     """
     Helper function to plot steps and hits
     """
 
     # get everything we want to plot from the inspector
-    steps = insp.get_annotation_per_trial("rel_steps")
-    y_axis_all = insp.get_annotation_per_trial("rel_hits")
-    losses = insp.get_losses()
+    steps = inspectors[0].get_annotation_per_trial("rel_steps")
+    y_axis_all = inspectors[0].get_annotation_per_trial("rel_hits")
+    losses = inspectors[0].get_losses()
+    for insp in inspectors[1:]:
+        steps.extend(insp.get_annotation_per_trial("rel_steps"))
+        y_axis_all.extend(insp.get_annotation_per_trial("rel_hits"))
+        losses.extend(insp.get_losses())
 
     # X ticks just from 1 to n iterations
     x_axis = range(1, len(steps) + 1)
@@ -49,9 +53,16 @@ def plot_steps_hits_loss(insp, config):
     for i, det in enumerate(config["O2DETECTORS"]):
         if i > 0 and not i % len(colors):
             line_style_index += 1
-        y_axis = [yax[i] for yax in y_axis_all]
-        if None in y_axis:
-            continue
+        x_axis = []
+        y_axis = []
+        for trial, yax in enumerate(y_axis_all):
+            if yax[i] is None:
+                continue
+            x_axis.append(trial)
+            y_axis.append(yax[i])
+        #y_axis = [yax[i] for yax in y_axis_all]
+        #if None in y_axis:
+        #    continue
         plot_base(x_axis, y_axis, ax, label=det, linestyle=linestyles[line_style_index], color=colors[i % len(colors)], linewidth=2)
 
     # add steps to plot
@@ -78,7 +89,7 @@ def evaluate(inspectors, config):
     insp = inspectors[0]
 
     if config:
-        plot_steps_hits_loss(insp, config)
+        plot_steps_hits_loss(inspectors, config)
         # at the same time, extract mapping of optuna parameter names to actual meaningful names related to the task at hand
         counter = 0
         index_to_med_id = parse_yaml(join(resolve_path(f"{config['reference_dir']}_0"), config["index_to_med_id"]))
@@ -89,25 +100,26 @@ def evaluate(inspectors, config):
     else:
         print("WARNING: Cannot do the step and hits history without the user configuration")
 
-    figure, _ = insp.plot_importance(map_params=map_params, n_most_important=50)
-    figure.tight_layout()
-    figure.savefig("importance_parameters.png")
-    plt.close(figure)
+    for i, insp in enumerate(inspectors):
+        figure, _ = insp.plot_importance(map_params=map_params, n_most_important=50)
+        figure.tight_layout()
+        figure.savefig(f"importance_parameters_{i}.png")
+        plt.close(figure)
 
-    figure, _ = insp.plot_parallel_coordinates(map_params=map_params)
-    figure.savefig("parallel_coordinates.png")
-    plt.close(figure)
+        figure, _ = insp.plot_parallel_coordinates(map_params=map_params)
+        figure.savefig(f"parallel_coordinates_{i}.png")
+        plt.close(figure)
 
-    figure, _ = insp.plot_slices(map_params=map_params)
-    figure.savefig("slices.png")
-    plt.close(figure)
+        figure, _ = insp.plot_slices(map_params=map_params)
+        figure.savefig(f"slices_{i}.png")
+        plt.close(figure)
 
-    figure, _ = insp.plot_correlations(map_params=map_params)
-    figure.savefig("parameter_correlations.png")
-    plt.close(figure)
+        figure, _ = insp.plot_correlations(map_params=map_params)
+        figure.savefig(f"parameter_correlations_{i}.png")
+        plt.close(figure)
 
-    figure, _ = insp.plot_pairwise_scatter(map_params=map_params)
-    figure.savefig("pairwise_scatter.png")
-    plt.close(figure)
+        figure, _ = insp.plot_pairwise_scatter(map_params=map_params)
+        figure.savefig(f"pairwise_scatter_{i}.png")
+        plt.close(figure)
 
     return True

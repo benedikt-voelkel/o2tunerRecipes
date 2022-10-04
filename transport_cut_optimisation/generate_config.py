@@ -56,6 +56,7 @@ def generate_config(recipe_dir, n_batches):
     config_in["stages_user"] = user_stages
 
     for name, stage in config_in["stages_optimisation"].items():
+        stage["config"]["batches"] = n_batches
         if not "deps" in stage:
             stage["deps"] = opt_deps
 
