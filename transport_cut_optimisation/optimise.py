@@ -81,11 +81,13 @@ def compute_loss(rel_hits, rel_steps, rel_hits_cutoff, penalty_below):
     """
     rel_hits_valid = [rh for rh in rel_hits if rh is not None]
     loss = rel_steps**2
+    penalise = 0
     for rvh in rel_hits_valid:
-        penalty = (1 + penalty_below * (rel_hits_cutoff - rvh)) if rvh < rel_hits_cutoff else 1
-        loss += penalty * (rel_hits_cutoff - rvh)**2
+        if rvh < rel_hits_cutoff:
+            penalise += 1
+            loss += (penalty_below * (rel_hits_cutoff - rvh))**2
 
-    return loss / (len(rel_hits_valid) + 1)
+    return loss / (penalise + 1)
 
 
 def mask_params(params, index_to_med_id, replay_cut_parameters):
