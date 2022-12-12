@@ -81,13 +81,13 @@ def compute_loss(rel_hits, rel_steps, rel_hits_cutoff, penalty_below):
     """
     rel_hits_valid = [rh for rh in rel_hits if rh is not None]
     loss = rel_steps**2
-    penalise = 0
     for rvh in rel_hits_valid:
         if rvh < rel_hits_cutoff:
-            penalise += 1
             loss += (penalty_below * (rel_hits_cutoff - rvh))**2
+        else:
+            loss += (rel_hits_cutoff - rvh)**2
 
-    return loss / (penalise + 1)
+    return loss / (len(rel_hits_valid) + 1)
 
 
 def mask_params(params, index_to_med_id, replay_cut_parameters):
@@ -217,30 +217,38 @@ def objective_default(trial, config):
     
     batches = config["batches"]
     rel_steps_avg = 0
-    rel_hits_avg = [0] * len(config["O2DETECTORS"])
+    rel_hits_avg = [None] * len(config["O2DETECTORS"])
     if config["use_all_batches"]:
         # EITHER we always run over all produced reference batches...
         rel_hits_has_hits = [0] * len(config["O2DETECTORS"])
-        for i in range(batches):
+        this_batches = config["use_all_batches"]
+        if this_batches < batches:
+            rng = np.random.default_rng()
+            this_batches = rng.integers(0, batches, config["use_all_batches"])
+        for i in this_batches:
+            print(f"Using batch {i}")
             rel_steps, rel_hits = run_on_batch(i, config)
             rel_steps_avg += rel_steps
             for j, hits in enumerate(rel_hits):
                 if hits is not None:
+                    if rel_hits_avg[j] is None:
+                        rel_hits_avg[j] = 0
                     rel_hits_avg[j] += hits
                     rel_hits_has_hits[j] += 1
         for j, (hits, has_hits) in enumerate(zip(rel_hits_avg, rel_hits_has_hits)):
             if has_hits:
                 rel_hits_avg[j] = hits / has_hits
-        rel_steps_avg /= batches
+        rel_steps_avg /= config["use_all_batches"]
     else:
         # ...OR only one random batch
-        batch_id = np.random.randint(0, batches)
+        rng = np.random.default_rng()
+        batch_id = rng.integers(0, batches)
         rel_steps_avg, rel_hits_avg = run_on_batch(batch_id, config)
     
     # ...and annotate drawn space and metrics to trial so we can re-use it
     annotate_trial(trial, "space", list(this_array))
-    annotate_trial(trial, "rel_steps", rel_steps)
-    annotate_trial(trial, "rel_hits", rel_hits)
+    annotate_trial(trial, "rel_steps", rel_steps_avg)
+    annotate_trial(trial, "rel_hits", rel_hits_avg)
     dump_yaml([float(value) for value in this_array], config["opt_params"])
 
     # remove all the artifacts we don't need to keep space

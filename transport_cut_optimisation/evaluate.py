@@ -6,6 +6,8 @@ from os.path import join
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
+import seaborn as sns
+
 from o2tuner.io import parse_yaml
 from o2tuner.config import resolve_path
 
@@ -31,17 +33,18 @@ def plot_steps_hits_loss(inspectors, config):
     """
 
     # get everything we want to plot from the inspector
-    steps = inspectors[0].get_annotation_per_trial("rel_steps")
-    y_axis_all = inspectors[0].get_annotation_per_trial("rel_hits")
-    losses = inspectors[0].get_losses()
-    for insp in inspectors[1:]:
-        steps.extend(insp.get_annotation_per_trial("rel_steps"))
-        y_axis_all.extend(insp.get_annotation_per_trial("rel_hits"))
-        losses.extend(insp.get_losses())
+    steps = []
+    hits = []
+    losses = []
+    for insp in inspectors:
+        this_steps = insp.get_annotation_per_trial("rel_steps")
+        steps.extend(this_steps)
+        this_hits = insp.get_annotation_per_trial("rel_hits")
+        hits.extend(this_hits)
+        this_losses = insp.get_losses()
+        losses.extend(this_losses)
 
-    # X ticks just from 1 to n iterations
-    x_axis = range(1, len(steps) + 1)
-
+    x_axis = range(len(losses))
     figure, ax = plt.subplots(figsize=(30, 10))
     linestyles = ["--", ":", "-."]
     colors = list(mcolors.TABLEAU_COLORS.values())
@@ -53,16 +56,16 @@ def plot_steps_hits_loss(inspectors, config):
     for i, det in enumerate(config["O2DETECTORS"]):
         if i > 0 and not i % len(colors):
             line_style_index += 1
-        x_axis = []
         y_axis = []
-        for trial, yax in enumerate(y_axis_all):
+        for yax in hits:
             if yax[i] is None:
-                continue
-            x_axis.append(trial)
+                y_axis.append(0)
             y_axis.append(yax[i])
         #y_axis = [yax[i] for yax in y_axis_all]
         #if None in y_axis:
         #    continue
+        if not any(y_axis):
+            continue
         plot_base(x_axis, y_axis, ax, label=det, linestyle=linestyles[line_style_index], color=colors[i % len(colors)], linewidth=2)
 
     # add steps to plot
@@ -83,6 +86,66 @@ def plot_steps_hits_loss(inspectors, config):
     plt.close(figure)
 
 
+def plot_hits_param_correlation(inspectors, config, index_to_med_id):
+    insp = inspectors[0]
+
+    df = insp._study.trials_dataframe().query("state == 'COMPLETE'")
+    steps = insp.get_annotation_per_trial("rel_steps")
+    hits = insp.get_annotation_per_trial("rel_hits")
+    df["rel_steps"] = steps
+    col_keep = ["rel_steps"]
+    col_hits = ["rel_steps"]
+
+    for i, det in enumerate(config["O2DETECTORS"]):
+        y_axis = []
+        for yax in hits:
+            if yax[i] is None:
+                y_axis.append(0)
+            y_axis.append(yax[i])
+        #y_axis = [yax[i] for yax in y_axis_all]
+        #if None in y_axis:
+        #    continue
+        if not any(y_axis):
+            continue
+        df[f"rel_hits_{det}"] = y_axis
+        col_keep.append(f"rel_hits_{det}")
+        col_hits.append(f"rel_hits_{det}")
+
+    columns = df.columns
+    keep = [c for c in columns if "params" in c]
+    col_keep.extend(keep)
+    df = df[col_keep]
+
+    map_params = {}
+    counter = 0
+    for med_id in index_to_med_id:
+        for param in config["REPLAY_CUT_PARAMETERS"]:
+            map_params[f"params_{str(counter)}"] = f"{param} of {med_id}"
+            counter += 1
+    
+    columns_new = [map_params[k] for k in keep]
+
+
+    cmap = sns.diverging_palette(230, 20, as_cmap=True)
+    fig, ax = plt.subplots(figsize=(40, 40))
+    corr = df.corr()
+    corr.drop(col_hits, inplace=True)
+
+    corr.drop(keep, axis=1, inplace=True)
+    corr.drop("rel_hits_MID", axis=1, inplace=True)
+    sns.heatmap(corr, ax=ax, cmap=cmap, yticklabels=columns_new, vmin=-1, vmax=1)
+    ax.tick_params(axis="both", labelsize=20)
+    ax.tick_params(axis="x", rotation=45)
+    ax.tick_params(axis="y", rotation=0)
+    ax.collections[0].colorbar.ax.tick_params(labelsize=20)
+    ax.collections[0].colorbar.ax.set_ylabel("correlation", fontsize=40)
+    fig.tight_layout()
+    fig.savefig("corr.png")
+    plt.close(fig)
+
+
+
+
 def evaluate(inspectors, config):
 
     map_params = {}
@@ -90,9 +153,11 @@ def evaluate(inspectors, config):
 
     if config:
         plot_steps_hits_loss(inspectors, config)
+
+        index_to_med_id = parse_yaml(join(resolve_path(f"{config['reference_dir']}_0"), config["index_to_med_id"]))
+        plot_hits_param_correlation(inspectors, config, index_to_med_id)
         # at the same time, extract mapping of optuna parameter names to actual meaningful names related to the task at hand
         counter = 0
-        index_to_med_id = parse_yaml(join(resolve_path(f"{config['reference_dir']}_0"), config["index_to_med_id"]))
         for med_id in index_to_med_id:
             for param in config["REPLAY_CUT_PARAMETERS"]:
                 map_params[str(counter)] = f"{param} of {med_id}"
