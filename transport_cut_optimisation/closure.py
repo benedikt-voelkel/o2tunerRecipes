@@ -1,5 +1,6 @@
 from os.path import join
 from math import sqrt
+from os import environ
 
 import numpy as np
 
@@ -8,22 +9,24 @@ import matplotlib.colors as mcolors
 import matplotlib.cm as mcmap
 import seaborn as sns
 
-from ROOT import TGeoManager
+from ROOT import TGeoManager, TFile
 
 from o2tuner.config import resolve_path
 from o2tuner.io import parse_json, parse_yaml
+from o2tuner.system import run_command
 
 class ParamHelper:
     def __init__(self, config):
         self.config = config
 
-        self.opt_dir = resolve_path(config["opt_dir"])
-        self.ref_dir = resolve_path(config["ref_dir"])
+        self.opt_dir = resolve_path(config["optimisation_dir"])
+        self.ref_dir = f"{resolve_path(config['reference_dir'])}_0"
 
         opt_summary = parse_yaml(join(self.opt_dir, "o2tuner_optimisation_summary.yaml"))
-        best_trial_dir = join(self.opt_dir, opt_summary["best_trial_cwd"])
+        self.best_trial_dir = join(self.opt_dir, opt_summary["best_trial_cwd"])
+        self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
 
-        self.opt_params = parse_json(join(best_trial_dir, "cuts_o2.json"))
+        self.opt_params = parse_json(self.opt_params_file)
         self.ref_params = parse_json(join(self.ref_dir, config["o2_medium_params_reference"]))
 
         # We are only interested in those parameters that are present in the optimised JSON,
@@ -32,7 +35,7 @@ class ParamHelper:
         self.cut_id_to_name = [name for name in self.default_params if name in config["parameters_to_optimise"]]
         self.cut_name_to_id = {name: i for i, name in enumerate(self.cut_id_to_name)}
 
-    def fill_ratios_single(cuts, cuts_ref):
+    def fill_ratios_single(self, cuts, cuts_ref):
         cut_list = [0] * len(self.cut_id_to_name)
         for cut_name in self.cut_id_to_name:
             cut_denom = cuts_ref[cut_name]
@@ -42,7 +45,7 @@ class ParamHelper:
             cut_list[self.cut_name_to_id[cut_name]] = cut_num / cut_denom
         return cut_list
 
-    def fill_from_defaults(opt_params_module, medium_names, add_to_list):
+    def fill_from_defaults(self, opt_params_module, medium_names, add_to_list):
         for opm in opt_params_module:
             medium_names.append(opm["medium_name"])
             add_to_list.append(self.fill_ratios_single(opm["cuts"], self.default_params))
@@ -57,19 +60,21 @@ class ParamHelper:
                 continue
             if mod_name not in self.ref_params:
                 fill_from_defaults(medium_params, medium_names, ratios_list)
-            current_ref_params = ref_params[mod_name]
+            current_ref_params = self.ref_params[mod_name]
             for medium_params_batch in medium_params:
                 if "cuts" not in medium_params_batch:
                     continue
                 found_ind = None
                 found_cuts = self.default_params
+                global_id = -1
                 for ind_ref, medium_params_batch_ref in enumerate(current_ref_params):
                     if medium_params_batch_ref["local_id"] == medium_params_batch["local_id"]:
                         found_ind = ind_ref
                         found_cuts = medium_params_batch_ref.get("cuts", self.default_params)
+                        global_id = medium_params_batch_ref["global_id"]
                         break
-                ratios_list.append(fill_ratios_single(medium_params_batch["cuts"], found_cuts))
-                medium_names.append(medium_params_batch["medium_name"])
+                ratios_list.append(self.fill_ratios_single(medium_params_batch["cuts"], found_cuts))
+                medium_names.append(f"{medium_params_batch['medium_name']} (ID {global_id})")
                 if found_ind is not None:
                     # remove this index so we search less and less each time
                     del current_ref_params[found_ind]
@@ -130,8 +135,8 @@ def param_rz(config):
     cave_box = cave.GetShape()
     x_lim_raw = (-cave_box.GetDX(), cave_box.GetDX())
     y_lim_raw = (-cave_box.GetDY(), cave_box.GetDY())
-    x_lim = (-800 / sqrt(2), 800 / sqrt(2))
-    y_lim = (-800 / sqrt(2), 800 / sqrt(2))
+    x_lim = (-10 / sqrt(2), 10 / sqrt(2))
+    y_lim = (-10 / sqrt(2), 10 / sqrt(2))
     z_lim = (-cave_box.GetDZ(), cave_box.GetDZ())
 
     size_ratio = (z_lim[1] - z_lim[0])  / (sqrt(2) * x_lim[1])
@@ -176,6 +181,7 @@ def param_rz(config):
                     if med_id not in param_space:
                         # This might happen when only certain modules are of interest
                         #print(f"Cannot find medium ID {med_id}, continue...")
+                        #print(f"MedId {med_id} not known")
                         continue
                     # get the maximum value because that is what is taken anyway
                     # TODO Take care of that so that we get the fully corrected space when we request the best space
@@ -196,21 +202,117 @@ def param_rz(config):
         for i, p in enumerate(param_helper.cut_id_to_name):
             print(f"For parameter {p}")
             colors = [v for v in voxels[:,:,:,i].flatten()]
-            figure, ax = plt.subplots(figsize=(40, 40 / size_ratio))
-            ax.scatter(z, r, c=colors, s=0.5, norm=cmap_rz, cmap=cmap)
+            figure, ax = plt.subplots(figsize=(40, 10)) #0 / size_ratio))
+            ax.scatter(z, r, c=colors, s=2, norm=cmap_rz, cmap=cmap)
             ax.set_xlabel("Z [cm]", fontsize=40)
             ax.set_ylabel("R [cm]", fontsize=40)
             ax.tick_params(axis="both", labelsize=30)
             ax.tick_params(axis="x", rotation=45)
             ax.tick_params(axis="y", rotation=0)
-            ax.set_aspect("equal", adjustable="box")
+            #ax.set_aspect("equal", adjustable="box")
 
-            figure.tight_layout()
+            #figure.tight_layout()
             save_name = f"params_rz_{p}_{suffix}.png"
             figure.savefig(save_name)
             plt.close(figure)
 
-
     make_rz(ref_params, (n_voxels_x, n_voxels_y, n_voxels_z), f"ref")
     make_rz(opt_params, (n_voxels_x, n_voxels_y, n_voxels_z), f"opt")
     return True
+
+
+def make_sorted_histos(histos):
+    x_axis = []
+
+    for h in histos:
+      axis = h.GetXaxis()
+      for i in range(1, h.GetNbinsX() + 1):
+          bl = axis.GetBinLabel(i)
+          if bl in x_axis or not bl:
+              continue
+          x_axis.append(bl)
+    lab_to_id = {lab: i for i, lab in enumerate(x_axis)}
+
+    sorted_histos = [[0] * len(x_axis) for _ in histos]
+
+    for i, h in enumerate(histos):
+        axis = h.GetXaxis()
+        for b in range(1, h.GetNbinsX() + 1):
+            bl = axis.GetBinLabel(b)
+            if not bl:
+                continue
+            sorted_histos[i][lab_to_id[bl]] = h.GetBinContent(b)
+
+    return x_axis, sorted_histos
+
+
+def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis", y_label="y_axis", annotations=None):
+
+    if not labels:
+        labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
+
+    fig, ax = plt.subplots(figsize=(40, 25))
+
+    hatches = [None, "/"]
+    
+    for i, (h, l) in enumerate(zip(sorted_histos, labels)):
+        ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
+
+    ax.set_xlabel(x_label, fontsize=40)
+    ax.set_ylabel(y_label, fontsize=40)
+    ax.tick_params(axis="both", labelsize=20)
+    ax.tick_params(axis="x", rotation=45)
+    ax.tick_params(axis="y", rotation=0)
+
+    ax.legend(loc="best", fontsize=40)
+    fig.tight_layout()
+    fig.savefig(savepath)
+    plt.close(fig)
+
+
+
+def step_analysis(config):
+    
+    MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
+    param_helper = ParamHelper(config)
+    events = config["events"]
+    generator = config["generator"]
+    engine = config["engine"]
+
+    cmd = f'MCSTEPLOG_TTREE=1 LD_PRELOAD={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps.so ' \
+          f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
+          f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
+
+    run_command(cmd, log_file="steplogging.log")
+
+    cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
+
+    # Run step analysis for ref
+    cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
+    run_command(cmd_ref)
+    # Run step analysis for opt
+    cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
+    run_command(cmd_opt)
+
+    file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+    file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+
+    histos = [file_ref.Get("MCAnalysisObjects/nStepsPerMod"), file_opt.Get("MCAnalysisObjects/nStepsPerMod")]
+    labels = ["reference", "optimised"]
+
+    x_axis, sorted_histos = make_sorted_histos(histos)
+
+    sum_ref = sum(sorted_histos[0])
+
+    for sh in sorted_histos:
+        for i, c in enumerate(sh):
+            sh[i] = c / sum_ref
+
+
+    overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
+    overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
+
+    return True
+
+
+

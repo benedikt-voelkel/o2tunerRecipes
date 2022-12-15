@@ -19,10 +19,10 @@ def generate_config(recipe_dir, n_batches):
     config_default = config_in["global_config"]
     config_default["batches"] = n_batches
 
-    stage_reference_in = {"python": {"file": "/PATH/TO/o2tunerRecipes/transport_cut_optimisation/reference.py",
+    stage_reference_in = {"python": {"file": "reference.py",
                                      "entrypoint": "run_reference"},
                           "config": config_default}
-    stage_baseline_in = {"python": {"file": "/PATH/TO/o2tunerRecipes/transport_cut_optimisation/reference.py",
+    stage_baseline_in = {"python": {"file": "reference.py",
                                     "entrypoint": "run_baseline"}}
     stage_baseline_hits_in = {"cmd": "root -l -b -q ${O2_ROOT}/share/macro/analyzeHits.C",
                               "log_file": config_default["hits_log_file"]}
@@ -66,7 +66,7 @@ def generate_config(recipe_dir, n_batches):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("batches", default=1, type=int)
+    parser.add_argument("-b", "--batches", default=1, type=int)
     parser.add_argument("-d", "--dir", default="./", help="recipe directory")
     args = parser.parse_args()
     sys.exit(generate_config(args.dir, args.batches))

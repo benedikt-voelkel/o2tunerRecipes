@@ -19,6 +19,10 @@ def run_reference(config):
     Called after arguments have been parsed
     """
 
+    gen_config_file = "genConfig.cfg"
+    with open(gen_config_file, "w") as f:
+        f.write(f"Random:seed {config['seed']}\n")
+        f.write("Random:setSeed on\n")
     events = config["events"]
     generator = config["generator"]
     engine = config["engine"]
@@ -29,7 +33,7 @@ def run_reference(config):
 
     cmd = f'MCSTEPLOG_TTREE=1 LD_PRELOAD={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps.so ' \
           f'o2-sim-serial -n {events} -g {generator} -e {engine} ' \
-          f'--skipModules ZDC --configKeyValues "MaterialManagerParam.outputFile={o2_medium_params_reference}"'
+          f'--skipModules ZDC --configKeyValues "MaterialManagerParam.outputFile={o2_medium_params_reference};GeneratorPythia8.config={gen_config_file}"'
     run_command(cmd, log_file=config["o2_sim_log"])
 
     reference_params = []
