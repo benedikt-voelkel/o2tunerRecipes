@@ -5,7 +5,7 @@ The cut tuning reference/basline run
 import sys
 from os.path import join
 from os import environ
-import argparse
+from platform import system as os_system
 
 from o2tuner.system import run_command
 from o2tuner.io import parse_json, dump_yaml
@@ -31,7 +31,10 @@ def run_reference(config):
     o2_detectors = config["O2DETECTORS"]
     replay_cut_parameters = config["REPLAY_CUT_PARAMETERS"]
 
-    cmd = f'MCSTEPLOG_TTREE=1 LD_PRELOAD={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps.so ' \
+    lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
+    preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
+
+    cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
           f'o2-sim-serial -n {events} -g {generator} -e {engine} ' \
           f'--skipModules ZDC --configKeyValues "MaterialManagerParam.outputFile={o2_medium_params_reference};GeneratorPythia8.config={gen_config_file}"'
     run_command(cmd, log_file=config["o2_sim_log"])

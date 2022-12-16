@@ -1,6 +1,7 @@
 from os.path import join
 from math import sqrt
 from os import environ
+from platform import system as os_system
 
 import numpy as np
 
@@ -279,7 +280,10 @@ def step_analysis(config):
     generator = config["generator"]
     engine = config["engine"]
 
-    cmd = f'MCSTEPLOG_TTREE=1 LD_PRELOAD={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps.so ' \
+    lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
+    preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
+
+    cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
           f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
           f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
 
