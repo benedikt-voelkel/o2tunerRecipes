@@ -8,12 +8,12 @@ def generate_config(recipe_dir, n_batches):
     """
     Generate the config for a certain number of batches
     """
-    
+
     config_in = join(recipe_dir, "config.yaml.in")
     if not exists(config_in):
         print(f"ERROR: Cannot find {config_in}")
         return 1
-    
+
     config_in = parse_yaml(config_in)
 
     config_default = config_in["global_config"]
@@ -32,9 +32,10 @@ def generate_config(recipe_dir, n_batches):
     user_stages = config_in.get("stages_user", {})
     for i in range(n_batches):
         ref_name = f"reference_sim_{i}"
-        stage_reference = copy(stage_reference_in)
+        stage_reference = deepcopy(stage_reference_in)
         ref_dir = f"{config_default['reference_dir']}_{i}"
         stage_reference["cwd"] = ref_dir
+        stage_reference["config"]["seed"] = i + 1
 
         baseline_name = f"baseline_sim_{i}"
         baseline_dir = f"{config_default['baseline_dir']}_{i}"
@@ -62,7 +63,7 @@ def generate_config(recipe_dir, n_batches):
 
     dump_yaml(config_in, join(recipe_dir, "config.yaml"))
     return 0
-    
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -70,3 +71,4 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--dir", default="./", help="recipe directory")
     args = parser.parse_args()
     sys.exit(generate_config(args.dir, args.batches))
+

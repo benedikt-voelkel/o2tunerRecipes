@@ -43,21 +43,21 @@ global_config: &global_config
     - PPCUTM
     - TOFMAX
   modules_to_optimise: # choose from O2PASSIVE
-    - HALL
+    #- HALL
     - PIPE
-    - CAVE
-    - MAG
-    - DIPO
-    - ABSO
-    - SHIL
-    - FRAME
-    - COMP
+    #- CAVE
+    #- MAG
+    #- DIPO
+    #- ABSO
+    #- SHIL
+    #- FRAME
+    #- COMP
   parameters_to_optimise: # choose from REPLAY_CUT_PARAMETERS
     - CUTGAM
     - CUTELE
-    - CUTNEU
-    - CUTHAD
-    - CUTMUO
+    #- CUTNEU
+    #- CUTHAD
+    #- CUTMUO
     #- BCUTE
     #- BCUTM
     #- DCUTE
@@ -91,25 +91,23 @@ stages_user:
     config: *global_config
     deps:
       - *opt_name
+
   rz_params:
     python:
       entrypoint: param_rz
       file: closure.py
     config:
       <<: *global_config
-      heatmap_min: 0.00001                                # The minimun value for the R-Z heatmap
-      heatmap_max: 1.                                     # The maximum for the R-Z heatmap
-      n_voxels: 20                                        # The number of voxels in x, y, z respectively
+      heatmap_min: 0.00001      # The minimun value for the R-Z heatmap
+      heatmap_max: 1.           # The maximum for the R-Z heatmap
+      x_lim: [-20, 20]          # lower and upper bound for x-coordinates to scan
+      y_lim: [-20, 20]          # lower and upper bound for y-coordinates to scan
+      z_lim: [-3000, 3000]      # lower and upper bound for z-coordinates to scan
+      n_voxels_x: 100           # The number of voxels in x
+      n_voxels_y: 100           # The number of voxels in y
+      n_voxels_z: 1000          # The number of voxels in z
     deps:
       - *opt_name
-
-  evaluate_params:
-    config: *global_config
-    deps:
-      - *opt_name
-    python:
-      entrypoint: param_plots
-      file: closure.py
 
   step_analysis:
     config: *global_config

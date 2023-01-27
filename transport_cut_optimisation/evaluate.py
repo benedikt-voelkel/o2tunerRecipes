@@ -122,9 +122,8 @@ def plot_hits_param_correlation(inspectors, config, index_to_med_id):
         for param in config["REPLAY_CUT_PARAMETERS"]:
             map_params[f"params_{str(counter)}"] = f"{param} of {med_id}"
             counter += 1
-    
-    columns_new = [map_params[k] for k in keep]
 
+    columns_new = [map_params[k] for k in keep]
 
     cmap = sns.diverging_palette(230, 20, as_cmap=True)
     fig, ax = plt.subplots(figsize=(40, 40))
@@ -142,8 +141,6 @@ def plot_hits_param_correlation(inspectors, config, index_to_med_id):
     fig.tight_layout()
     fig.savefig("corr.png")
     plt.close(fig)
-
-
 
 
 def evaluate(inspectors, config):
@@ -188,3 +185,4 @@ def evaluate(inspectors, config):
         plt.close(figure)
 
     return True
+
