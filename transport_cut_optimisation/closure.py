@@ -30,9 +30,16 @@ class ParamHelper:
         self.opt_params = parse_json(self.opt_params_file)
         self.ref_params = parse_json(join(self.ref_dir, config["o2_medium_params_reference"]))
 
+        self.medium_ids_optimised = []
+        passive_medium_ids_map = parse_yaml(join(self.ref_dir, config["passive_medium_ids_map"]))
+
+        for mod in config["modules_to_optimise"]:
+            self.medium_ids_optimised.extend(passive_medium_ids_map[mod])
+
         # We are only interested in those parameters that are present in the optimised JSON,
         # because others are not touched
         self.default_params = self.ref_params["default"]["cuts"]
+        print(self.default_params)
         self.cut_id_to_name = [name for name in self.default_params if name in config["parameters_to_optimise"]]
         self.cut_name_to_id = {name: i for i, name in enumerate(self.cut_id_to_name)}
 
@@ -93,11 +100,11 @@ class ParamHelper:
                     if "cuts" not in batch:
                         continue
                     cut_list = [0] * len(self.cut_id_to_name)
+                    cuts_in = batch.get("cuts", {})
                     for ind, cut_name in enumerate(self.cut_id_to_name):
-                        cut_list[ind] = batch["cuts"][cut_name]
+                        cut_list[ind] = cuts_in.get(cut_name, self.default_params[cut_name])
                     collect[batch["global_id"]] = cut_list
         return collect_ref, collect_opt
-
 
 
 def param_plots(config):
@@ -120,105 +127,104 @@ def param_plots(config):
     plt.close(figure)
 
     return True
-    
+
+
 def param_rz(config):
 
     param_helper = ParamHelper(config)
     ref_params, opt_params = param_helper.sort_params_by_global_id()
 
-    cut_bins = config.get("cut_bins", [0.00001, 0.0001, 0.001, 0.01, 0.1, 1.])
-
     # load our geometry
     geo_file = join(param_helper.ref_dir, "o2sim_geometry.root")
     geo_mgr = TGeoManager.Import(geo_file)
-    # get the cave dimensions
-    cave = geo_mgr.GetVolume("cave")
-    cave_box = cave.GetShape()
-    x_lim_raw = (-cave_box.GetDX(), cave_box.GetDX())
-    y_lim_raw = (-cave_box.GetDY(), cave_box.GetDY())
-    x_lim = (-10 / sqrt(2), 10 / sqrt(2))
-    y_lim = (-10 / sqrt(2), 10 / sqrt(2))
-    z_lim = (-cave_box.GetDZ(), cave_box.GetDZ())
 
-    size_ratio = (z_lim[1] - z_lim[0])  / (sqrt(2) * x_lim[1])
+    x_lim = config.get("x_lim", (-20, 20))
+    y_lim = config.get("y_lim", (-20, 20))
+    z_lim = config.get("z_lim", (-3000, 3000))
 
     # define the number of voxels in x, y, z, respectively
-    resolution = config.get("n_voxels", 20)
-    n_voxels_x = int((x_lim[1] - x_lim[0]) / resolution)
-    n_voxels_y = int((y_lim[1] - y_lim[0]) / resolution)
-    n_voxels_z = int((z_lim[1] - z_lim[0]) / resolution)
+    n_voxels_x = config.get("n_voxels_x", 100)
+    n_voxels_y = config.get("n_voxels_y", 100)
+    n_voxels_z = config.get("n_voxels_z", 3000)
+    if n_voxels_x == 0 or n_voxels_y == 0 or n_voxels_z == 0:
+        print(f"Number of voxels must be greater than 0, however there are ({n_voxels_x}, {n_voxels_y}, {n_voxels_z})")
+        return False
+
+    # Minimum and maximum z-value for heatmap
     vmin = config.get("heatmap_min", 0.00001)
     vmax = config.get("heatmap_max", 1)
 
-    def make_rz(param_space, n_voxels, suffix):
-        print(f"Make R-Z for suffix {suffix}")
-
-        # The voxels which will each get assigned a bin number according to the cut value
-        voxels = np.full((*n_voxels, 5), -1)
-        coord_xyz = np.zeros((*n_voxels, 3))
+    def collect_media_and_coordinates(n_voxels):
 
         # step size of x, y, z spacing
         step_x = (x_lim[1] - x_lim[0]) / n_voxels[0]
         step_y = (y_lim[1] - y_lim[0]) / n_voxels[1]
         step_z = (z_lim[1] - z_lim[0]) / n_voxels[2]
 
+        r_coord = np.full(n_voxels, 0.)
+        z_coord = np.full(n_voxels, 0.)
+        medium_ids = np.full(n_voxels, 0)
+
         # loop over all voxels
+        vol, med_id, vol_id_cache = (None, None, None)
         for i in range(n_voxels[0]):
+            # We want to be in the middle of the voxel
             x = x_lim[0] + step_x * (1 + 2 * i) / 2
             for j in range(n_voxels[1]):
                 y = y_lim[0] + step_y * (1 + 2 * j) / 2
                 for k in range(n_voxels[2]):
                     z = z_lim[0] + step_z * (1 + 2 * k) / 2
-                    # save the voxel coordinates
-                    coord_xyz[i][j][k][:] = np.array([x, y, z])
-                    # find the volume at this point
+                    r_coord[i][j][k] = np.sqrt(x**2 + y**2)
+                    z_coord[i][j][k] = z
                     geo_mgr.FindNode(x, y, z)
                     vol = geo_mgr.GetCurrentVolume()
                     med = vol.GetMedium()
                     if not med:
-                        print(f"No medium found vor volume {vol.GetName()}, continue...")
-                        continue
-                    med_id = med.GetId()
-                    if med_id not in param_space:
-                        # This might happen when only certain modules are of interest
-                        #print(f"Cannot find medium ID {med_id}, continue...")
-                        #print(f"MedId {med_id} not known")
+                        print(f"No medium found for volume {vol.GetName()}, continue...")
+                        medium_ids[i][j][k] = -1
                         continue
                     # get the maximum value because that is what is taken anyway
                     # TODO Take care of that so that we get the fully corrected space when we request the best space
-                    for p, cut_name in enumerate(param_helper.cut_id_to_name):
-                        value = param_space[med_id][p]
-                        if value <= 0:
-                            value = param_helper.default_params[cut_name]
-                        # Add to voxels
-                        voxels[i][j][k][p] = value
+                    med_id = med.GetId()
+                    if med_id not in param_helper.medium_ids_optimised:
+                        medium_ids[i][j][k] = -1
+                        continue
 
-        # Here we can cut out slices of voxels now
-        r = np.sqrt(coord_xyz[:,:,:,0]**2 + coord_xyz[:,:,:,1]**2).flatten()
-        z = coord_xyz[:,:,:,2].flatten()
+                    medium_ids[i][j][k] = med_id
 
+        return r_coord.flatten(), z_coord.flatten(), medium_ids.flatten()
+
+    def plot_rz(r, z, med_ids, p, param_space, suffix):
+        cut_name = param_helper.cut_id_to_name[p]
+        values = []
+        for i, med_id in enumerate(med_ids):
+            if med_id < 0:
+                values.append(0)
+                continue
+            if med_id not in param_space:
+                values.append(param_helper.default_params[cut_name])
+                continue
+            values.append(param_space[med_id][p])
         cmap_rz = mcolors.LogNorm(vmin=vmin, vmax=vmax)
         cmap = mcmap.get_cmap("Greens")
+        figure, ax = plt.subplots(figsize=(40, 10)) #0 / size_ratio))
+        ax.scatter(z, r, c=values, s=2, norm=cmap_rz, cmap=cmap)
+        ax.set_xlabel("Z [cm]", fontsize=40)
+        ax.set_ylabel("R [cm]", fontsize=40)
+        ax.tick_params(axis="both", labelsize=30)
+        ax.tick_params(axis="x", rotation=45)
+        ax.tick_params(axis="y", rotation=0)
+        save_name = f"params_rz_{cut_name}_{suffix}.png"
+        figure.tight_layout()
+        figure.savefig(save_name)
+        plt.close(figure)
 
-        for i, p in enumerate(param_helper.cut_id_to_name):
-            print(f"For parameter {p}")
-            colors = [v for v in voxels[:,:,:,i].flatten()]
-            figure, ax = plt.subplots(figsize=(40, 10)) #0 / size_ratio))
-            ax.scatter(z, r, c=colors, s=2, norm=cmap_rz, cmap=cmap)
-            ax.set_xlabel("Z [cm]", fontsize=40)
-            ax.set_ylabel("R [cm]", fontsize=40)
-            ax.tick_params(axis="both", labelsize=30)
-            ax.tick_params(axis="x", rotation=45)
-            ax.tick_params(axis="y", rotation=0)
-            #ax.set_aspect("equal", adjustable="box")
+    r, z, ids = collect_media_and_coordinates((n_voxels_x, n_voxels_y, n_voxels_z))
+    plot_rz(r, z, ids, 0, ref_params, "ref")
+    plot_rz(r, z, ids, 1, ref_params, "ref")
+    plot_rz(r, z, ids, 0, opt_params, "opt")
+    plot_rz(r, z, ids, 1, opt_params, "opt")
 
-            #figure.tight_layout()
-            save_name = f"params_rz_{p}_{suffix}.png"
-            figure.savefig(save_name)
-            plt.close(figure)
-
-    make_rz(ref_params, (n_voxels_x, n_voxels_y, n_voxels_z), f"ref")
-    make_rz(opt_params, (n_voxels_x, n_voxels_y, n_voxels_z), f"opt")
     return True
 
 
@@ -255,7 +261,7 @@ def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis"
     fig, ax = plt.subplots(figsize=(40, 25))
 
     hatches = [None, "/"]
-    
+
     for i, (h, l) in enumerate(zip(sorted_histos, labels)):
         ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
 
@@ -271,9 +277,8 @@ def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis"
     plt.close(fig)
 
 
-
 def step_analysis(config):
-    
+
     MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
     param_helper = ParamHelper(config)
     events = config["events"]
@@ -312,11 +317,8 @@ def step_analysis(config):
         for i, c in enumerate(sh):
             sh[i] = c / sum_ref
 
-
     overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
     overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
 
     return True
-
-
 

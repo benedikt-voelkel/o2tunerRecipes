@@ -137,7 +137,12 @@ def make_o2_format(space_drawn, ref_params_json, passive_medium_ids_map, replay_
             med_id = batch["global_id"]
             # according to which modules are recognised by this script
             if module in passive_medium_ids_map:
-                batch["cuts"] = dict(zip(replay_cut_parameters, space_drawn[med_id]))
+                current_cuts = batch.get("cuts", {})
+                for rcp, value in zip(replay_cut_parameters, space_drawn[med_id]):
+                    if value > 0:
+                        current_cuts[rcp] = value
+                batch["cuts"] = current_cuts
+                #batch["cuts"] = dict(zip(replay_cut_parameters, space_drawn[med_id]))
     return params
 
 
@@ -214,7 +219,7 @@ def objective_default(trial, config):
     space_drawn_o2 = make_o2_format(space_drawn, o2_medium_params_reference, passive_medium_ids_map, config["REPLAY_CUT_PARAMETERS"])
     param_file_path_o2 = "cuts_o2.json"
     dump_json(space_drawn_o2, param_file_path_o2)
-    
+
     batches = config["batches"]
     rel_steps_avg = 0
     rel_hits_avg = [None] * len(config["O2DETECTORS"])
@@ -244,7 +249,7 @@ def objective_default(trial, config):
         rng = np.random.default_rng()
         batch_id = rng.integers(0, batches)
         rel_steps_avg, rel_hits_avg = run_on_batch(batch_id, config)
-    
+
     # ...and annotate drawn space and metrics to trial so we can re-use it
     annotate_trial(trial, "space", list(this_array))
     annotate_trial(trial, "rel_steps", rel_steps_avg)
@@ -254,3 +259,4 @@ def objective_default(trial, config):
     # remove all the artifacts we don't need to keep space
     #remove_dir(cwd, keep=["hits.dat", "cuts.json", "cuts_o2.json", "sim.log"])
     return compute_loss(rel_hits_avg, rel_steps_avg, config["rel_hits_cutoff"], config["penalty_below"])
+
