@@ -163,6 +163,11 @@ def evaluate(inspectors, config):
         print("WARNING: Cannot do the step and hits history without the user configuration")
 
     for i, insp in enumerate(inspectors):
+        figure, _ = insp.plot_loss_feature_history(map_params=map_params, n_most_important=20)
+        figure.tight_layout()
+        figure.savefig(f"loss_feature_history_{i}.png")
+        plt.close(figure)
+
         figure, _ = insp.plot_importance(map_params=map_params, n_most_important=50)
         figure.tight_layout()
         figure.savefig(f"importance_parameters_{i}.png")

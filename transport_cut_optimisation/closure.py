@@ -8,6 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.cm as mcmap
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 import seaborn as sns
 
 from ROOT import TGeoManager, TFile
@@ -39,7 +41,6 @@ class ParamHelper:
         # We are only interested in those parameters that are present in the optimised JSON,
         # because others are not touched
         self.default_params = self.ref_params["default"]["cuts"]
-        print(self.default_params)
         self.cut_id_to_name = [name for name in self.default_params if name in config["parameters_to_optimise"]]
         self.cut_name_to_id = {name: i for i, name in enumerate(self.cut_id_to_name)}
 
@@ -214,6 +215,9 @@ def param_rz(config):
         ax.tick_params(axis="both", labelsize=30)
         ax.tick_params(axis="x", rotation=45)
         ax.tick_params(axis="y", rotation=0)
+        
+        figure.colorbar(mcmap.ScalarMappable(norm=cmap_rz, cmap=cmap), ax=ax, label="parameter value")
+
         save_name = f"params_rz_{cut_name}_{suffix}.png"
         figure.tight_layout()
         figure.savefig(save_name)
