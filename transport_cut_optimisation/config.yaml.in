@@ -141,3 +141,13 @@ stages_evaluation:
     config: *global_config
     deps:
       - *opt_name
+
+  evaluate_simple:
+    config: *global_config
+    deps:
+    - *opt_name
+    entrypoint: evaluate_simple
+    file: evaluate.py
+    optimisations:
+    - *opt_name
+

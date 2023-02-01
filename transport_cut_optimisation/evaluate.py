@@ -191,3 +191,21 @@ def evaluate(inspectors, config):
 
     return True
 
+
+def evaluate_simple(inspectors, config):
+    insp = inspectors[0]
+    losses = insp.get_losses()
+    dirs = insp.get_annotation_per_trial("cwd")
+
+    filtered = []
+    better_loss = losses[0]
+    for i, (l, d) in enumerate(zip(losses, dirs)):
+        if l < better_loss:
+            filtered.append((i+1, l, d))
+            better_loss = l
+    print("Losses with directories")
+    for i, l, d in filtered:
+        print(f"Trial {i}, Loss {l} is in directory {d}")
+    return True
+        
+
