@@ -1,0 +1,57 @@
+global_config: &global_config
+  parameter1: value1
+  parameterN: valueN
+
+
+# # Stages to do pre- or post-processing
+# stages_user:
+#   # for instance do some additional evaluation of parameters
+#   evaluate_params:
+#     python:
+#       entrypoint: entry_func
+#       file: some_file.py
+#     config: *global_config
+#     deps:
+#       - optimisation
+
+
+stages_optimisation:
+  optimisation:
+    file: optimise.py       # file (in the same directory as this config) where the objective to be executed is found
+    objective: objective    # the objective to run
+    jobs: 2                 # desired number of jobs to be run in parallel
+    trials: 10              # desired number of trials
+    study:                  # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+      name: my_optimisation
+      storage: sqlite:///opt.db
+    #cwd: another_dir       # default is the same as the name of this stage, which would be optimisation
+    config:
+      <<: *global_config
+      an_additional_parameter_list:
+        - value0
+        - value1
+
+  optimisation_larger_range:
+    file: optimise.py                    # file (in the same directory as this config) where the objective to be executed is found
+    objective: objective_larger_range    # the objective to run
+    jobs: 2                              # desired number of jobs to be run in parallel
+    trials: 10                           # desired number of trials
+    study:                               # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+      name: my_optimisation
+      storage: sqlite:///opt.db
+    #cwd: another_dir       # default is the same as the name of this stage, which would be optimisation_larger_range
+    config:
+      <<: *global_config
+      an_additional_parameter_list:
+        - value0
+        - value1
+
+stages_evaluation:
+  evaluate:
+    file: evaluate.py
+    entrypoint: evaluate
+    optimisations:
+      - optimisation
+    config: *global_config
+    #deps:                # add additional dependencies if others than optimisations
+    #  - *opt_name
