@@ -46,11 +46,15 @@ stages_optimisation:
         - value0
         - value1
 
-stages_evaluation:
+stages_user:
   evaluate:
-    file: evaluate.py
-    entrypoint: evaluate
-    optimisations:
+    # here we refer to a Python script to be run; an alternative could be
+    # cmd: echo "Hello"
+    # in order to run a shell command
+    python:
+      file: evaluate.py
+      entrypoint: evaluate
+    optimisations:        # optimisation will automatically be added as dependencies
       - optimisation
     config: *global_config
     #deps:                # add additional dependencies if others than optimisations
