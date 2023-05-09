@@ -83,7 +83,16 @@ global_config: &global_config
   use_all_batches: 1                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
 
 
-stages_user: 
+stages_user:
+
+  evaluate:
+    python:
+      file: evaluate.py
+      entrypoint: evaluate
+    optimisations:
+      - *opt_name
+    config: *global_config
+
   evaluate_params:
     python:
       entrypoint: param_plots
@@ -131,13 +140,3 @@ stages_optimisation:
       <<: *global_config
       modules_to_optimise:
         - PIPE
-
-stages_evaluation:
-  evaluate:
-    file: evaluate.py
-    entrypoint: evaluate
-    optimisations:
-      - *opt_name
-    config: *global_config
-    deps:
-      - *opt_name
