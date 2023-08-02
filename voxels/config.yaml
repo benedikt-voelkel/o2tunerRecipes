@@ -1,0 +1,94 @@
+global_config: &global_config
+  engine: TGeant4
+  generator: pythia8pp
+  events: 20
+
+  o2_sim_log: sim.log                                         # the file name to be used to pipe the output of each simulation into
+  rel_hits_cutoff: 0.95                                       # desired minimum drop of relative ratio of hits
+  hits_log_file: &hits_file hits.dat                          # common name of file to pipe hit evaluation into (when using O2's analyzeHits.C macro)
+  reference_dir: &reference_dir reference                     # the reference directory
+  baseline_dir: &baseline_dir baseline                        # the baseline directory
+  optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
+  voxels_sampled_file: voxels.dat
+  hashmap_file: hashmap.root
+  n_voxels_x: 20
+  n_voxels_y: 20
+  n_voxels_z: 60
+  root_voxel_macro_full_path: /full/path/to/marco.C
+
+
+  O2DETECTORS: # all detectors we have
+    - ITS
+    - TOF
+    - EMC
+    - TRD
+    - PHS
+    - FT0
+    - HMP
+    - MFT
+    - FDD
+    - FV0
+    - MCH
+    - MID
+    - CPV
+    - ZDC
+    - TPC
+
+stages_user:
+
+  reference:
+    python:
+      file: reference.py
+      entrypoint: reference
+    config: *global_config
+    cwd: *reference_dir
+
+  baseline:
+    python:
+      file: reference.py
+      entrypoint: baseline
+    config: *global_config
+    cwd: *baseline_dir
+    deps:
+      - reference
+
+  baseline_hits:
+    python:
+      file: reference.py
+      entrypoint: baseline_steps_hits
+    config: *global_config
+    cwd: *baseline_dir
+    deps:
+      - baseline
+
+
+stages_optimisation:
+  optimisation:
+    file: optimise.py
+    objective: objective
+    jobs: 2     # desired number of jobs
+    trials: 10  # desired number of trials
+    study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+      name: *opt_name
+      storage: sqlite:///opt.db
+    config: *global_config
+    deps:
+      - baseline_hits
+
+
+  iterate_layers_xy:
+    file: optimise.py
+    objective: iterate_layers_xy
+    jobs: 2     # desired number of jobs
+    trials: 10  # desired number of trials
+    study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+      name: iterate_layers_xy
+      storage: sqlite:///opt.db
+      sampler:
+        name: grid
+        # we assume nX == nY
+        search_space: {"i_layer_xy": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]}
+
+    config: *global_config
+    deps:
+      - baseline_steps_hits
