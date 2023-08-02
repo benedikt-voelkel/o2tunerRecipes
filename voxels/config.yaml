@@ -55,7 +55,7 @@ stages_user:
   baseline_hits:
     python:
       file: reference.py
-      entrypoint: baseline_steps_hits
+      entrypoint: baseline_hits
     config: *global_config
     cwd: *baseline_dir
     deps:
@@ -91,4 +91,4 @@ stages_optimisation:
 
     config: *global_config
     deps:
-      - baseline_steps_hits
+      - baseline_hits

@@ -41,3 +41,8 @@ def baseline(inspectors, config):
     run_command(cmd_extract_hits, log_file="hits.dat")
     return True
 
+def baseline_hits(inspectors, config):
+    extract_hits_root = abspath(join(O2_ROOT, "share", "macro", "analyzeHits.C"))
+    cmd_extract_hits = f"root -l -b -q {extract_hits_root}"
+    run_command(cmd_extract_hits, log_file="hits.dat")
+    return True
