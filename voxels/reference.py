@@ -12,7 +12,7 @@ from o2tuner.config import resolve_path
 O2_ROOT = environ.get("O2_ROOT")
 MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
 
-def reference(config):
+def reference(inspectors, config):
     """
     Called after arguments have been parsed
     """
@@ -29,7 +29,7 @@ def reference(config):
     return True
 
 
-def baseline(config):
+def baseline(inspectors, config):
     reference_dir = resolve_path(config["reference_dir"])
     kine_file = join(reference_dir, "o2sim_Kine.root")
     steplogger_file = join(reference_dir, "MCStepLoggerOutput.root")
