@@ -81,6 +81,9 @@ global_config: &global_config
   baseline_dir: &baseline_dir baseline                        # the baseline directory
   optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
   use_all_batches: 1                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+  with_distributions:
+  - 7
+  - 8
 
 
 stages_user: 

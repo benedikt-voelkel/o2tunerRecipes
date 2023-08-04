@@ -34,6 +34,9 @@ def run_reference(config):
     lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
     preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
 
+    # cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
+    #       f'o2-sim-serial -n {events} -g external -e {engine} ' \
+    #       f'--skipModules ZDC --configKeyValues "MaterialManagerParam.outputFile={o2_medium_params_reference};GeneratorExternal.fileName=/home/bvolkel/g4_cut_opt/o2tunerRecipes/transport_cut_optimisation/generator_EM.C;GeneratorExternal.funcName=makeGeneratorEMGun()"'
     cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
           f'o2-sim-serial -n {events} -g {generator} -e {engine} ' \
           f'--skipModules ZDC --configKeyValues "MaterialManagerParam.outputFile={o2_medium_params_reference};GeneratorPythia8.config={gen_config_file}"'

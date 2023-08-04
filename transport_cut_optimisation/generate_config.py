@@ -4,7 +4,7 @@ import argparse
 from copy import deepcopy, copy
 from o2tuner.io import dump_yaml, parse_yaml
 
-def generate_config(recipe_dir, n_batches):
+def generate_config(recipe_dir, n_batches, output_name):
     """
     Generate the config for a certain number of batches
     """
@@ -61,7 +61,7 @@ def generate_config(recipe_dir, n_batches):
         if not "deps" in stage:
             stage["deps"] = opt_deps
 
-    dump_yaml(config_in, join(recipe_dir, "config.yaml"))
+    dump_yaml(config_in, join(recipe_dir, output_name))
     return 0
 
 
@@ -69,6 +69,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", "--batches", default=1, type=int)
     parser.add_argument("-d", "--dir", default="./", help="recipe directory")
+    parser.add_argument("-o", "--output", help="output name of the YAML file, default is config.yaml", default="config.yaml")
     args = parser.parse_args()
-    sys.exit(generate_config(args.dir, args.batches))
+    sys.exit(generate_config(args.dir, args.batches, args.output))
 

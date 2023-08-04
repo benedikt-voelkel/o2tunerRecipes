@@ -50,7 +50,7 @@ class ParamHelper:
             cut_denom = cuts_ref[cut_name]
             if cut_denom <= 0:
                 cut_denom = self.default_params[cut_name]
-            cut_num = cuts[cut_name] if cuts[cut_name] > 0 else cut_denom
+            cut_num = cuts[cut_name] if cuts.get(cut_name, -1) > 0 else cut_denom
             cut_list[self.cut_name_to_id[cut_name]] = cut_num / cut_denom
         return cut_list
 
@@ -115,13 +115,13 @@ def param_plots(config):
 
     figure, ax = plt.subplots(figsize=(30, 30))
     sns.heatmap(ratios_list, ax=ax, mask=False, norm=mcolors.LogNorm(), cmap=sns.color_palette("Greens", as_cmap=True), xticklabels=param_helper.cut_id_to_name, yticklabels=medium_names, linewidth=0.5)
-    ax.set_xlabel("cut parameter", fontsize=40)
-    ax.set_ylabel("medium name", fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
+    ax.set_xlabel("cut parameter", fontsize=50)
+    ax.set_ylabel("medium name", fontsize=50)
+    ax.tick_params(axis="both", labelsize=40)
     ax.tick_params(axis="x", rotation=45)
     ax.tick_params(axis="y", rotation=0)
-    ax.collections[0].colorbar.ax.tick_params(labelsize=20)
-    ax.collections[0].colorbar.ax.set_ylabel("ratio opt / ref", fontsize=40)
+    ax.collections[0].colorbar.ax.tick_params(labelsize=40)
+    ax.collections[0].colorbar.ax.set_ylabel("ratio opt / ref", fontsize=50)
 
     figure.tight_layout()
     figure.savefig("param_difference_mod.png")
@@ -269,13 +269,13 @@ def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis"
     for i, (h, l) in enumerate(zip(sorted_histos, labels)):
         ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
 
-    ax.set_xlabel(x_label, fontsize=40)
-    ax.set_ylabel(y_label, fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
+    ax.set_xlabel(x_label, fontsize=50)
+    ax.set_ylabel(y_label, fontsize=50)
+    ax.tick_params(axis="both", labelsize=35)
     ax.tick_params(axis="x", rotation=45)
     ax.tick_params(axis="y", rotation=0)
 
-    ax.legend(loc="best", fontsize=40)
+    ax.legend(loc="best", fontsize=50)
     fig.tight_layout()
     fig.savefig(savepath)
     plt.close(fig)
@@ -291,6 +291,12 @@ def step_analysis(config):
 
     lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
     preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
+
+    cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
+          f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
+          f'--skipModules ZDC'
+
+    #run_command(cmd, cwd=param_helper.ref_dir, log_file="steplogging.log")
 
     cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
           f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
