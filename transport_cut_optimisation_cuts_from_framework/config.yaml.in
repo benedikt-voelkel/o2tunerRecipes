@@ -1,0 +1,152 @@
+global_config: &global_config
+  engine: TGeant4
+  generator: pythia8pp
+  events: 20
+  seed: 624
+  O2PASSIVE: # all passive modules there are (static)
+    - HALL
+    - PIPE
+    - CAVE
+    - MAG
+    - DIPO
+    - ABSO
+    - SHIL
+    - FRAME
+    - COMP
+  O2DETECTORS: # all detectors there are (static)
+    - ITS
+    - ALPIDE
+    - TOF
+    - EMC
+    - TRD
+    - PHS
+    - FT0
+    - HMP
+    - MFT
+    - FDD
+    - FV0
+    - MCH
+    - MID
+    - CPV
+    - ZDC
+    - TPC
+  REPLAY_CUT_PARAMETERS: # all parameters there are (static)
+    - CUTGAM
+    - CUTELE
+    - CUTNEU
+    - CUTHAD
+    - CUTMUO
+    - BCUTE
+    - BCUTM
+    - DCUTE
+    - DCUTM
+    - PPCUTM
+    - TOFMAX
+  modules_to_optimise: # choose from O2PASSIVE
+    #- HALL
+    - PIPE
+    #- CAVE
+    #- MAG
+    #- DIPO
+    #- ABSO
+    #- SHIL
+    #- FRAME
+    #- COMP
+  parameters_to_optimise: # choose from REPLAY_CUT_PARAMETERS
+    - CUTGAM
+    - CUTELE
+    #- CUTNEU
+    #- CUTHAD
+    #- CUTMUO
+    #- BCUTE
+    #- BCUTM
+    #- DCUTE
+    #- DCUTM
+    #- PPCUTM
+    #- TOFMAX
+  o2_medium_params: o2_medium_params.json                     # the name of the file where the O2 reference parameters will be found
+  o2_sim_log: sim.log                                         # the file name to be used to pipe the output of each simulation into
+  passive_medium_ids_map: passive_medium_ids_map.yaml         # YAML to serialise the mapping of medium IDs to each passive module
+  detector_medium_ids_map: detector_medium_ids_map.yaml       # YAML to serialise the mapping of medium IDs to each detector
+  reference_params: reference_params.yaml                     # YAML to serialise the numpy array of parameters into
+  index_to_med_id: index_to_med_id.yaml                       # YAML to serialise and map each medium ID to a global ID
+  opt_params: current_params.yaml                             # current params just as a list in YAML
+  rel_hits_cutoff: 0.95                                       # desired minimum drop of relative ratio of hits
+  search_value_low: 0.00001                                   # the lower bound of values to be drawn for each parameter
+  search_value_up: 1.                                         # the upper bound of values to be drawn for each parameter
+  penalty_below: 10                                           # apply an additional penalty factor when the hits are below, this is smooth
+  opt_values: opt_values.yaml                                 # simply the list of suggested values of a trial
+  hits_log_file: &hits_file hits.dat                          # common name of file to pipe hit evaluation into (when using O2's analyzeHits.C macro)
+  reference_dir: &reference_dir reference                     # the reference directory
+  baseline_dir: &baseline_dir baseline                        # the baseline directory
+  optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
+  use_all_batches: 2                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+
+
+stages_user:
+
+  evaluate:
+    python:
+      file: evaluate.py
+      entrypoint: evaluate
+    optimisations:
+      - *opt_name
+    config: *global_config
+
+  evaluate_simple:
+    config: *global_config
+    deps:
+    - *opt_name
+    python:
+      entrypoint: evaluate_simple
+      file: evaluate.py
+    optimisations:
+    - *opt_name
+
+  evaluate_params:
+    python:
+      entrypoint: param_plots
+      file: closure.py
+    config: *global_config
+    deps:
+      - *opt_name
+
+  rz_params:
+    python:
+      entrypoint: param_rz
+      file: closure.py
+    config:
+      <<: *global_config
+      heatmap_min: 0.00001      # The minimun value for the R-Z heatmap
+      heatmap_max: 1.           # The maximum for the R-Z heatmap
+      x_lim: [-20, 20]          # lower and upper bound for x-coordinates to scan
+      y_lim: [-20, 20]          # lower and upper bound for y-coordinates to scan
+      z_lim: [-3000, 3000]      # lower and upper bound for z-coordinates to scan
+      n_voxels_x: 100           # The number of voxels in x
+      n_voxels_y: 100           # The number of voxels in y
+      n_voxels_z: 1000          # The number of voxels in z
+    deps:
+      - *opt_name
+
+  step_analysis:
+    config: *global_config
+    deps:
+      - *opt_name
+    python:
+      entrypoint: step_analysis
+      file: closure.py
+
+stages_optimisation:
+  optimisation:
+    file: optimise.py
+    objective: objective_default
+    jobs: 1     # desired number of jobs
+    trials: 10  # desired number of trials
+    study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
+      name: *opt_name
+      storage: sqlite:///opt.db
+    cwd: *opt_name
+    config:
+      <<: *global_config
+      modules_to_optimise:
+        - PIPE
