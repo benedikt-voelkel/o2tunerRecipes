@@ -34,7 +34,7 @@ def run_reference(inspectors, config):
     preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
 
     cmd = f'MCSTEPLOG_NO_FIELD=1 MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
-          f'o2-sim-serial -n {events} -g {generator} -e {engine} ' \
+          f'o2-sim-serial -n {events} -g {generator} -e {engine} --skipModules ZDC ' \
           f'--configKeyValues "MaterialManagerParam.outputFile={o2_medium_params};GeneratorPythia8.config={gen_config_file}"'
     run_command(cmd, log_file=config["o2_sim_log"])
 

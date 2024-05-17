@@ -1,7 +1,7 @@
 global_config: &global_config
   engine: TGeant4
   generator: pythia8pp
-  events: 20
+  events: 60
   seed: 624
   O2PASSIVE: # all passive modules there are (static)
     - HALL
@@ -80,7 +80,7 @@ global_config: &global_config
   reference_dir: &reference_dir reference                     # the reference directory
   baseline_dir: &baseline_dir baseline                        # the baseline directory
   optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
-  use_all_batches: 2                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+  use_all_batches: 3                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
 
 
 stages_user:
@@ -140,8 +140,8 @@ stages_optimisation:
   optimisation:
     file: optimise.py
     objective: objective_default
-    jobs: 1     # desired number of jobs
-    trials: 10  # desired number of trials
+    jobs: 20     # desired number of jobs
+    trials: 300  # desired number of trials
     study:      # where the study is stored (only give a name and leave out "storage" key if you do not have MySQL working, it will anyway fall back to the serial run if it cannot communicate with MySQL)
       name: *opt_name
       storage: sqlite:///opt.db

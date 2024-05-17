@@ -148,7 +148,10 @@ def evaluate(inspectors, config):
     map_params = {}
     insp = inspectors[0]
 
+    print("here")
+
     if config:
+        print("config")
         plot_steps_hits_loss(inspectors, config)
 
         index_to_med_id = parse_yaml(join(resolve_path(f"{config['reference_dir']}_0"), config["index_to_med_id"]))
@@ -159,35 +162,37 @@ def evaluate(inspectors, config):
             for param in config["REPLAY_CUT_PARAMETERS"]:
                 map_params[str(counter)] = f"{param} of {med_id}"
                 counter += 1
+
+        insp.set_parameter_name_map(map_params)
     else:
         print("WARNING: Cannot do the step and hits history without the user configuration")
 
     for i, insp in enumerate(inspectors):
-        figure, _ = insp.plot_loss_feature_history(map_params=map_params, n_most_important=20)
+        figure, _ = insp.plot_loss_feature_history(n_most_important=20)
         figure.tight_layout()
         figure.savefig(f"loss_feature_history_{i}.png")
         plt.close(figure)
 
-        figure, _ = insp.plot_importance(map_params=map_params, n_most_important=50)
+        figure, _ = insp.plot_importance(n_most_important=50)
         figure.tight_layout()
         figure.savefig(f"importance_parameters_{i}.png")
         plt.close(figure)
 
-        figure, _ = insp.plot_parallel_coordinates(map_params=map_params)
+        figure, _ = insp.plot_parallel_coordinates()
         figure.savefig(f"parallel_coordinates_{i}.png")
         plt.close(figure)
 
-        figure, _ = insp.plot_slices(map_params=map_params)
+        figure, _ = insp.plot_slices()
         figure.savefig(f"slices_{i}.png")
         plt.close(figure)
 
-        figure, _ = insp.plot_correlations(map_params=map_params)
+        figure, _ = insp.plot_correlations()
         figure.savefig(f"parameter_correlations_{i}.png")
         plt.close(figure)
 
-        figure, _ = insp.plot_pairwise_scatter(map_params=map_params)
-        figure.savefig(f"pairwise_scatter_{i}.png")
-        plt.close(figure)
+        #figure, _ = insp.plot_pairwise_scatter()
+        #figure.savefig(f"pairwise_scatter_{i}.png")
+        #plt.close(figure)
 
     return True
 

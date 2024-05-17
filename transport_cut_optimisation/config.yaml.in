@@ -1,4 +1,4 @@
-global_config: &global_config
+config:
   engine: TGeant4
   generator: pythia8pp
   events: 50
@@ -80,7 +80,9 @@ global_config: &global_config
   reference_dir: &reference_dir reference                     # the reference directory
   baseline_dir: &baseline_dir baseline                        # the baseline directory
   optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
-  use_all_batches: 1                                          # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+  use_all_batches:                                            # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+    - 0
+  batches: 5
 
 
 stages_user:
@@ -91,13 +93,11 @@ stages_user:
       entrypoint: evaluate
     optimisations:
       - *opt_name
-    config: *global_config
 
   evaluate_params:
     python:
       entrypoint: param_plots
       file: closure.py
-    config: *global_config
     deps:
       - *opt_name
 
@@ -106,7 +106,6 @@ stages_user:
       entrypoint: param_rz
       file: closure.py
     config:
-      <<: *global_config
       heatmap_min: 0.00001      # The minimun value for the R-Z heatmap
       heatmap_max: 1.           # The maximum for the R-Z heatmap
       x_lim: [-20, 20]          # lower and upper bound for x-coordinates to scan
@@ -119,7 +118,6 @@ stages_user:
       - *opt_name
 
   step_analysis:
-    config: *global_config
     deps:
       - *opt_name
     python:
@@ -136,7 +134,3 @@ stages_optimisation:
       name: *opt_name
       storage: sqlite:///opt.db
     cwd: *opt_name
-    config:
-      <<: *global_config
-      modules_to_optimise:
-        - PIPE

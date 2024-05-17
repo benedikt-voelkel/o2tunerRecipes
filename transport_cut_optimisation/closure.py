@@ -19,24 +19,48 @@ from o2tuner.io import parse_json, parse_yaml
 from o2tuner.system import run_command
 
 class ParamHelper:
-    def __init__(self, config):
+    def __init__(self, insp, config):
         self.config = config
 
         self.opt_dir = resolve_path(config["optimisation_dir"])
         self.ref_dir = f"{resolve_path(config['reference_dir'])}_0"
 
-        opt_summary = parse_yaml(join(self.opt_dir, "o2tuner_optimisation_summary.yaml"))
-        self.best_trial_dir = join(self.opt_dir, opt_summary["best_trial_cwd"])
-        self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
+        best_indices = insp.get_best_indices()
+        opt_dirs = [insp.get_annotation_per_trial("cwd")[i] for i in best_indices]
+        rel_hits = [insp.get_annotation_per_trial("rel_hits")[i] for i in best_indices]
+        rel_steps = [insp.get_annotation_per_trial("rel_steps")[i] for i in best_indices]
+        trial_numbers = [insp.get_trial_numbers()[i] for i in best_indices]
 
+        min_hits = []
+        for i, rh in enumerate(rel_hits):
+            min_hits.append(min([h for h in rh if h is not None]))
+
+        best_index = None
+        max_hits_index = None
+        for i, (rh, rs) in enumerate(zip(min_hits, rel_steps)):
+            if max_hits_index is None or min_hits[max_hits_index] < rh:
+                max_hits_index = i
+            if rh >= config["rel_hits_cutoff"]:
+                if best_index is None:
+                    best_index = i
+                    continue
+                if rs < rel_steps[best_index]:
+                    best_index = i
+
+        if best_index is None:
+            # simply take the one with most hits
+            best_index = max_hits_index
+
+        self.best_trial_dir = join(self.opt_dir, opt_dirs[best_index])
+        self.best_trial_number = trial_numbers[best_index]
+        print(f"Best trial number to work with is {self.best_trial_number}")
+        print(f"Best trial directory to work with is {self.best_trial_dir}")
+
+        self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
         self.opt_params = parse_json(self.opt_params_file)
         self.ref_params = parse_json(join(self.ref_dir, config["o2_medium_params_reference"]))
 
-        self.medium_ids_optimised = []
-        passive_medium_ids_map = parse_yaml(join(self.ref_dir, config["passive_medium_ids_map"]))
-
-        for mod in config["modules_to_optimise"]:
-            self.medium_ids_optimised.extend(passive_medium_ids_map[mod])
+        self.medium_ids_optimised = list(set(insp.get_annotation_per_trial("index_to_medium_id")[0]))
 
         # We are only interested in those parameters that are present in the optimised JSON,
         # because others are not touched
@@ -108,23 +132,25 @@ class ParamHelper:
         return collect_ref, collect_opt
 
 
-def param_plots(config):
-    param_helper = ParamHelper(config)
+def param_plots(inspectors, config):
+    insp = inspectors[0]
+    param_helper = ParamHelper(insp, config)
 
     medium_names, ratios_list = param_helper.make_ratios()
 
     figure, ax = plt.subplots(figsize=(30, 30))
     sns.heatmap(ratios_list, ax=ax, mask=False, norm=mcolors.LogNorm(), cmap=sns.color_palette("Greens", as_cmap=True), xticklabels=param_helper.cut_id_to_name, yticklabels=medium_names, linewidth=0.5)
-    ax.set_xlabel("cut parameter", fontsize=40)
-    ax.set_ylabel("medium name", fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
-    ax.tick_params(axis="x", rotation=45)
+    ax.set_xlabel("cut parameter", fontsize=70)
+    ax.set_ylabel("medium name", fontsize=70)
+    ax.tick_params(axis="both", labelsize=60)
+    ax.tick_params(axis="x", rotation=0)
     ax.tick_params(axis="y", rotation=0)
-    ax.collections[0].colorbar.ax.tick_params(labelsize=20)
-    ax.collections[0].colorbar.ax.set_ylabel("ratio opt / ref", fontsize=40)
+    ax_cbar = ax.collections[0].colorbar.ax
+    ax_cbar.tick_params(labelsize=60)
+    ax_cbar.set_ylabel("ratio opt / ref", fontsize=70)
 
     figure.tight_layout()
-    figure.savefig("param_difference_mod.png")
+    figure.savefig("param_difference_mod.png", bbox_inches="tight")
     plt.close(figure)
 
     return True
@@ -262,20 +288,20 @@ def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis"
     if not labels:
         labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
 
-    fig, ax = plt.subplots(figsize=(40, 25))
+    fig, ax = plt.subplots(figsize=(30, 30))
 
     hatches = [None, "/"]
 
     for i, (h, l) in enumerate(zip(sorted_histos, labels)):
         ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
 
-    ax.set_xlabel(x_label, fontsize=40)
-    ax.set_ylabel(y_label, fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
-    ax.tick_params(axis="x", rotation=45)
+    ax.set_xlabel(x_label, fontsize=70)
+    ax.set_ylabel(y_label, fontsize=70)
+    ax.tick_params(axis="both", labelsize=60)
+    ax.tick_params(axis="x", rotation=90)
     ax.tick_params(axis="y", rotation=0)
 
-    ax.legend(loc="best", fontsize=40)
+    ax.legend(loc="best", fontsize=70)
     fig.tight_layout()
     fig.savefig(savepath)
     plt.close(fig)
@@ -296,16 +322,16 @@ def step_analysis(config):
           f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
           f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
 
-    run_command(cmd, log_file="steplogging.log")
+    #run_command(cmd, log_file="steplogging.log")
 
     cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
 
     # Run step analysis for ref
     cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
-    run_command(cmd_ref)
+    #run_command(cmd_ref)
     # Run step analysis for opt
     cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
-    run_command(cmd_opt)
+    #run_command(cmd_opt)
 
     file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
     file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")

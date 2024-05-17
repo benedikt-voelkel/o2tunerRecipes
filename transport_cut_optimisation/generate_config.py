@@ -20,8 +20,7 @@ def generate_config(recipe_dir, n_batches):
     config_default["batches"] = n_batches
 
     stage_reference_in = {"python": {"file": "reference.py",
-                                     "entrypoint": "run_reference"},
-                          "config": config_default}
+                                     "entrypoint": "run_reference"}}
     stage_baseline_in = {"python": {"file": "reference.py",
                                     "entrypoint": "run_baseline"}}
     stage_baseline_hits_in = {"cmd": "root -l -b -q ${O2_ROOT}/share/macro/analyzeHits.C",
@@ -57,7 +56,9 @@ def generate_config(recipe_dir, n_batches):
     config_in["stages_user"] = user_stages
 
     for name, stage in config_in["stages_optimisation"].items():
-        stage["config"]["batches"] = n_batches
+        config = stage.get("config", {})
+        config["batches"] = n_batches
+        stage["config"] = config
         if not "deps" in stage:
             stage["deps"] = opt_deps
 
