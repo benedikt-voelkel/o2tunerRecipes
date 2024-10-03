@@ -37,10 +37,12 @@ class ParamHelper:
 
         best_index = None
         max_hits_index = None
+        rel_hits_cutoff = config["rel_hits_cutoff"]
+        rel_hits_cutoff = 0.965
         for i, (rh, rs) in enumerate(zip(min_hits, rel_steps)):
             if max_hits_index is None or min_hits[max_hits_index] < rh:
                 max_hits_index = i
-            if rh >= config["rel_hits_cutoff"]:
+            if rh >= rel_hits_cutoff:
                 if best_index is None:
                     best_index = i
                     continue
@@ -55,6 +57,8 @@ class ParamHelper:
         self.best_trial_number = trial_numbers[best_index]
         print(f"Best trial number to work with is {self.best_trial_number}")
         print(f"Best trial directory to work with is {self.best_trial_dir}")
+        print(f"Best number of leftover steps {rel_steps[best_index]}")
+        print(f"Best number of leftover hits {rel_hits[best_index]}")
 
         self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
         self.opt_params = parse_json(self.opt_params_file)
@@ -156,9 +160,9 @@ def param_plots(inspectors, config):
     return True
 
 
-def param_rz(config):
+def param_rz(inspectors, config):
 
-    param_helper = ParamHelper(config)
+    param_helper = ParamHelper(inspectors[0], config)
     ref_params, opt_params = param_helper.sort_params_by_global_id()
 
     # load our geometry
@@ -257,98 +261,96 @@ def param_rz(config):
 
     return True
 
-
 def make_sorted_histos(histos):
-    x_axis = []
+  x_axis = []
 
-    for h in histos:
-      axis = h.GetXaxis()
-      for i in range(1, h.GetNbinsX() + 1):
-          bl = axis.GetBinLabel(i)
-          if bl in x_axis or not bl:
-              continue
-          x_axis.append(bl)
-    lab_to_id = {lab: i for i, lab in enumerate(x_axis)}
+  for h in histos:
+    axis = h.GetXaxis()
+    for i in range(1, h.GetNbinsX() + 1):
+      bl = axis.GetBinLabel(i)
+      if bl in x_axis or not bl:
+        continue
+      x_axis.append(bl)
+      lab_to_id = {lab: i for i, lab in enumerate(x_axis)}
 
-    sorted_histos = [[0] * len(x_axis) for _ in histos]
+  sorted_histos = [[0] * len(x_axis) for _ in histos]
 
-    for i, h in enumerate(histos):
-        axis = h.GetXaxis()
-        for b in range(1, h.GetNbinsX() + 1):
-            bl = axis.GetBinLabel(b)
-            if not bl:
-                continue
-            sorted_histos[i][lab_to_id[bl]] = h.GetBinContent(b)
+  for i, h in enumerate(histos):
+    axis = h.GetXaxis()
+    for b in range(1, h.GetNbinsX() + 1):
+      bl = axis.GetBinLabel(b)
+      if not bl:
+        continue
+      sorted_histos[i][lab_to_id[bl]] = h.GetBinContent(b)
 
-    return x_axis, sorted_histos
+  return x_axis, sorted_histos
 
 
 def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis", y_label="y_axis", annotations=None):
 
-    if not labels:
-        labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
+  if not labels:
+    labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
 
-    fig, ax = plt.subplots(figsize=(30, 30))
+  fig, ax = plt.subplots(figsize=(30, 30))
 
-    hatches = [None, "/"]
+  hatches = [None, "/"]
 
-    for i, (h, l) in enumerate(zip(sorted_histos, labels)):
-        ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
+  for i, (h, l) in enumerate(zip(sorted_histos, labels)):
+    ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
 
-    ax.set_xlabel(x_label, fontsize=70)
-    ax.set_ylabel(y_label, fontsize=70)
-    ax.tick_params(axis="both", labelsize=60)
-    ax.tick_params(axis="x", rotation=90)
-    ax.tick_params(axis="y", rotation=0)
+  ax.set_xlabel(x_label, fontsize=70)
+  ax.set_ylabel(y_label, fontsize=70)
+  ax.tick_params(axis="both", labelsize=60)
+  ax.tick_params(axis="x", rotation=90)
+  ax.tick_params(axis="y", rotation=0)
 
-    ax.legend(loc="best", fontsize=70)
-    fig.tight_layout()
-    fig.savefig(savepath)
-    plt.close(fig)
+  ax.legend(loc="best", fontsize=70)
+  fig.tight_layout()
+  fig.savefig(savepath)
+  plt.close(fig)
 
 
-def step_analysis(config):
+def step_analysis(inspectors, config):
 
-    MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
-    param_helper = ParamHelper(config)
-    events = config["events"]
-    generator = config["generator"]
-    engine = config["engine"]
+  MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
+  param_helper = ParamHelper(inspectors[0], config)
+  events = config["events"]
+  generator = config["generator"]
+  engine = config["engine"]
 
-    lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
-    preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
+  lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
+  preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
 
-    cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
-          f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
-          f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
+  cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
+  f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
+  f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
 
-    #run_command(cmd, log_file="steplogging.log")
+  run_command(cmd, log_file="steplogging.log")
 
-    cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
+  cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
 
-    # Run step analysis for ref
-    cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
-    #run_command(cmd_ref)
-    # Run step analysis for opt
-    cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
-    #run_command(cmd_opt)
+  # Run step analysis for ref
+  cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
+  run_command(cmd_ref)
+  # Run step analysis for opt
+  cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
+  run_command(cmd_opt)
 
-    file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
-    file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+  file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+  file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
 
-    histos = [file_ref.Get("MCAnalysisObjects/nStepsPerMod"), file_opt.Get("MCAnalysisObjects/nStepsPerMod")]
-    labels = ["reference", "optimised"]
+  histos = [file_ref.Get("MCAnalysisObjects/nStepsPerMod"), file_opt.Get("MCAnalysisObjects/nStepsPerMod")]
+  labels = ["reference", "optimised"]
 
-    x_axis, sorted_histos = make_sorted_histos(histos)
+  x_axis, sorted_histos = make_sorted_histos(histos)
 
-    sum_ref = sum(sorted_histos[0])
+  sum_ref = sum(sorted_histos[0])
 
-    for sh in sorted_histos:
-        for i, c in enumerate(sh):
-            sh[i] = c / sum_ref
+  for sh in sorted_histos:
+    for i, c in enumerate(sh):
+      sh[i] = c / sum_ref
 
-    overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
-    overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
+  overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
+  overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
 
-    return True
-
+  return True

@@ -1,8 +1,8 @@
 config:
-  engine: TGeant4
-  generator: pythia8pp
-  events: 50
-  seed: 624
+  engine: TGeant4                                             # engine to be used (for which to optimise); this should not be changed
+  generator: pythia8pp                                        # generator to be used
+  events: 50                                                  # number of event to be simulated per batch
+  seed: 624                                                   # seed passed to o2-sim-serial
   O2PASSIVE: # all passive modules there are (static)
     - HALL
     - PIPE
@@ -43,27 +43,10 @@ config:
     - PPCUTM
     - TOFMAX
   modules_to_optimise: # choose from O2PASSIVE
-    #- HALL
     - PIPE
-    #- CAVE
-    #- MAG
-    #- DIPO
-    #- ABSO
-    #- SHIL
-    #- FRAME
-    #- COMP
   parameters_to_optimise: # choose from REPLAY_CUT_PARAMETERS
     - CUTGAM
     - CUTELE
-    #- CUTNEU
-    #- CUTHAD
-    #- CUTMUO
-    #- BCUTE
-    #- BCUTM
-    #- DCUTE
-    #- DCUTM
-    #- PPCUTM
-    #- TOFMAX
   o2_medium_params_reference: o2_medium_params_reference.json # the name of the file where the O2 reference parameters will be found
   o2_sim_log: sim.log                                         # the file name to be used to pipe the output of each simulation into
   passive_medium_ids_map: passive_medium_ids_map.yaml         # YAML to serialise the mapping of medium IDs to each passive module
@@ -77,13 +60,11 @@ config:
   penalty_below: 2                                            # apply an additional penalty factor when the hits are below, this is smooth
   opt_values: opt_values.yaml                                 # simply the list of suggested values of a trial
   hits_log_file: &hits_file hits.dat                          # common name of file to pipe hit evaluation into (when using O2's analyzeHits.C macro)
-  reference_dir: &reference_dir reference                     # the reference directory
-  baseline_dir: &baseline_dir baseline                        # the baseline directory
+  reference_dir: &reference_dir reference                     # the reference directory (batch number added per batch), directory where the very original simulation is done and steps are collected
+  baseline_dir: &baseline_dir baseline                        # the baseline directory (batch number added per batch), directory where the original simulation is replayed once more so that RNG effects are taken care of
   optimisation_dir: &opt_name optimisation                    # the optimisation directory and name
-  use_all_batches:                                            # whether to use all batches for each trial (true), otherwise, use only one batch randomly chosen (false)
+  optimise_on_batches:                                        # list of batch numbers to be used for optimisation; if not set or None, use all batches
     - 0
-  batches: 5
-
 
 stages_user:
 
@@ -98,7 +79,7 @@ stages_user:
     python:
       entrypoint: param_plots
       file: closure.py
-    deps:
+    optimisations:
       - *opt_name
 
   rz_params:
@@ -114,7 +95,7 @@ stages_user:
       n_voxels_x: 100           # The number of voxels in x
       n_voxels_y: 100           # The number of voxels in y
       n_voxels_z: 1000          # The number of voxels in z
-    deps:
+    optimisations:
       - *opt_name
 
   step_analysis:
