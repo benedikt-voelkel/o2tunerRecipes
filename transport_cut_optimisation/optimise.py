@@ -136,7 +136,7 @@ def compute_loss(rel_hits, rel_steps, rel_hits_cutoff, penalty_below, ref_values
 
     for rvh in rel_hits_valid:
 
-        
+
         pb = penalty_below * (rel_hits_cutoff - rvh) if rvh < rel_hits_cutoff else 0
         #if rvh < rel_hits_cutoff:
             # since it's very low, add a penalty factor
@@ -157,7 +157,7 @@ def make_o2_format(flat_value_list, index_to_med_id, module_medium_ids_map, repl
         media = ref_params[module]
         for medium in media:
             medium_id = medium["global_id"]
-            
+
             # run through until we find this medium ID
             for idx in range(0, len(index_to_med_id), len(replay_cut_parameters)):
                 med_id = index_to_med_id[idx]
@@ -191,7 +191,7 @@ def flatten_o2_dict(o2_cuts_dict, replay_cut_parameters, o2_modules):
     default_cuts = o2_cuts_dict["default"]["cuts"]
 
     # make sure that we always loop through the modules in the same order
-    for idx_mod, module in enumerate(sorted(list(o2_cuts_dict.keys()))):
+    for module in sorted(list(o2_cuts_dict.keys())):
         if module in ["default", "enableSpecialCuts", "enableSpecialProcesses"]:
             # not actually modules, skip
             continue
@@ -199,7 +199,8 @@ def flatten_o2_dict(o2_cuts_dict, replay_cut_parameters, o2_modules):
             # not interested in that
             continue
 
-        module_medium_map = module_medium_ids_map.get(module, [])
+        # prepare a list to contain all medium ids for this module
+        module_medium_map = []
 
         # the media for this module
         media = o2_cuts_dict[module]
@@ -210,9 +211,12 @@ def flatten_o2_dict(o2_cuts_dict, replay_cut_parameters, o2_modules):
             cuts = medium.get("cuts", {})
             cuts_append = []
             for rcp in replay_cut_parameters:
-                # Set values of this paramter.
+                # Set values of this parameter.
                 # This medium might have an empty cut dict, but since it is requested to be studied, we fill the list
-                value = cuts.get(rcp, default_cuts[rcp])
+                value = cuts.get(rcp, -1)
+                if value < 0:
+                    # either set to <0 in the cut file or didn't exist; set to default
+                    value = default_cuts[rcp]
                 cuts_append.append(value)
 
             index_to_med_id.extend([med_id] * len(cuts_append))
@@ -244,20 +248,18 @@ def run_on_batch(batch_id, config):
     cut_file_param = ";MaterialManagerParam.inputFile=cuts_o2.json"
     cmd = f'o2-sim-serial -n {config["events"]} -g extkinO2 --extKinFile {kine_file} -e MCReplay --skipModules ZDC ' \
           f'--configKeyValues="MCReplayParam.stepFilename={steplogger_file}{cut_file_param}"'
-    #cmd = f'o2-sim-serial --seed 1 -n {config["events"]} -g extkinO2 --extKinFile {kine_file} --skipModules ZDC ' \
-    #      f'--configKeyValues="SimCutParams.trackSeed=true{cut_file_param}"'
-    _, sim_file = run_command(cmd, log_file="sim.log")
+    _, sim_file = run_command(cmd, log_file=config["o2_sim_log"])
 
     # extract the hits using O2 macro and pipe to file
     extract_hits_root = abspath(join(O2_ROOT, "share", "macro", "analyzeHits.C"))
     cmd_extract_hits = f"root -l -b -q {extract_hits_root}"
-    _, hit_file = run_command(cmd_extract_hits, log_file="hits.dat")
+    _, hit_file = run_command(cmd_extract_hits, log_file=config["hits_log_file"])
 
     # compute the loss and further metrics...
-    baseline_hits_file = join(baseline_dir, "hits.dat")
+    baseline_hits_file = join(baseline_dir, config["hits_log_file"])
     sim_file_ref = None
-    #baseline_hits_file = join(reference_dir, "hits.dat")
-    #sim_file_ref = join(reference_dir, "sim.log")
+    #baseline_hits_file = join(reference_dir, config["hits_log_file"])
+    #sim_file_ref = join(reference_dir, config["o2_sim_log"])
     return compute_metrics(hit_file, baseline_hits_file, sim_file, config["O2DETECTORS"], sim_file_ref)
 
 
@@ -278,9 +280,6 @@ def objective_default(trial, config):
 
     # draw/aka "suggest" parameters
     for i, value in enumerate(ref_params_array):
-        # the flattened lists are of n_media * n_parameters and every len(parameters_to_optimise) belongs to another medium.
-        # So first find out via modulo, which cut parameter this is
-        cut_parameter_name = parameters_to_optimise[i % len(parameters_to_optimise)]
         low = value
         up = config["search_value_up"]
         if low < 0:
@@ -298,7 +297,7 @@ def objective_default(trial, config):
 
     batches = config["batches"]
     # the batches to run over
-    run_on_batches = config.get("use_all_batches", None)
+    run_on_batches = config.get("optimise_on_batches", None)
     if run_on_batches is None:
         run_on_batches = list(range(batches))
 
@@ -306,7 +305,6 @@ def objective_default(trial, config):
     rel_hits_avg = [None] * len(config["O2DETECTORS"])
     # count in how many batches a detector had hits so that we can build the correct average
     rel_hits_has_hits = [0] * len(config["O2DETECTORS"])
-    this_batches = config["use_all_batches"]
     for i in run_on_batches:
         print(f"Using batch {i}")
         rel_steps, rel_hits = run_on_batch(i, config)
@@ -328,9 +326,6 @@ def objective_default(trial, config):
     annotate_trial(trial, "index_to_medium_id", index_to_med_id)
     annotate_trial(trial, "index_to_medium_name", index_to_med_name)
     annotate_trial(trial, "index_to_module_name", index_to_mod_name)
-
-    # remove all the artifacts we don't need to keep space
-    #remove_dir(cwd, keep=["hits.dat", "cuts_o2.json", "sim.log"])
 
     #return compute_loss(rel_hits_avg, rel_steps_avg, config["rel_hits_cutoff"], config["penalty_below"], ref_params_array, params_array)
     steps_loss, hits_loss = compute_loss(rel_hits_avg, rel_steps_avg, config["rel_hits_cutoff"], config["penalty_below"])
