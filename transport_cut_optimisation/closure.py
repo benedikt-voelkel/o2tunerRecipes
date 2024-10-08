@@ -19,24 +19,52 @@ from o2tuner.io import parse_json, parse_yaml
 from o2tuner.system import run_command
 
 class ParamHelper:
-    def __init__(self, config):
+    def __init__(self, insp, config):
         self.config = config
 
         self.opt_dir = resolve_path(config["optimisation_dir"])
         self.ref_dir = f"{resolve_path(config['reference_dir'])}_0"
 
-        opt_summary = parse_yaml(join(self.opt_dir, "o2tuner_optimisation_summary.yaml"))
-        self.best_trial_dir = join(self.opt_dir, opt_summary["best_trial_cwd"])
-        self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
+        best_indices = insp.get_best_indices()
+        opt_dirs = [insp.get_annotation_per_trial("cwd")[i] for i in best_indices]
+        rel_hits = [insp.get_annotation_per_trial("rel_hits")[i] for i in best_indices]
+        rel_steps = [insp.get_annotation_per_trial("rel_steps")[i] for i in best_indices]
+        trial_numbers = [insp.get_trial_numbers()[i] for i in best_indices]
 
+        min_hits = []
+        for i, rh in enumerate(rel_hits):
+            min_hits.append(min([h for h in rh if h is not None]))
+
+        best_index = None
+        max_hits_index = None
+        rel_hits_cutoff = config["rel_hits_cutoff"]
+        rel_hits_cutoff = 0.965
+        for i, (rh, rs) in enumerate(zip(min_hits, rel_steps)):
+            if max_hits_index is None or min_hits[max_hits_index] < rh:
+                max_hits_index = i
+            if rh >= rel_hits_cutoff:
+                if best_index is None:
+                    best_index = i
+                    continue
+                if rs < rel_steps[best_index]:
+                    best_index = i
+
+        if best_index is None:
+            # simply take the one with most hits
+            best_index = max_hits_index
+
+        self.best_trial_dir = join(self.opt_dir, opt_dirs[best_index])
+        self.best_trial_number = trial_numbers[best_index]
+        print(f"Best trial number to work with is {self.best_trial_number}")
+        print(f"Best trial directory to work with is {self.best_trial_dir}")
+        print(f"Best number of leftover steps {rel_steps[best_index]}")
+        print(f"Best number of leftover hits {rel_hits[best_index]}")
+
+        self.opt_params_file = join(self.best_trial_dir, "cuts_o2.json")
         self.opt_params = parse_json(self.opt_params_file)
         self.ref_params = parse_json(join(self.ref_dir, config["o2_medium_params_reference"]))
 
-        self.medium_ids_optimised = []
-        passive_medium_ids_map = parse_yaml(join(self.ref_dir, config["passive_medium_ids_map"]))
-
-        for mod in config["modules_to_optimise"]:
-            self.medium_ids_optimised.extend(passive_medium_ids_map[mod])
+        self.medium_ids_optimised = list(set(insp.get_annotation_per_trial("index_to_medium_id")[0]))
 
         # We are only interested in those parameters that are present in the optimised JSON,
         # because others are not touched
@@ -108,31 +136,33 @@ class ParamHelper:
         return collect_ref, collect_opt
 
 
-def param_plots(config):
-    param_helper = ParamHelper(config)
+def param_plots(inspectors, config):
+    insp = inspectors[0]
+    param_helper = ParamHelper(insp, config)
 
     medium_names, ratios_list = param_helper.make_ratios()
 
     figure, ax = plt.subplots(figsize=(30, 30))
     sns.heatmap(ratios_list, ax=ax, mask=False, norm=mcolors.LogNorm(), cmap=sns.color_palette("Greens", as_cmap=True), xticklabels=param_helper.cut_id_to_name, yticklabels=medium_names, linewidth=0.5)
-    ax.set_xlabel("cut parameter", fontsize=40)
-    ax.set_ylabel("medium name", fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
-    ax.tick_params(axis="x", rotation=45)
+    ax.set_xlabel("cut parameter", fontsize=70)
+    ax.set_ylabel("medium name", fontsize=70)
+    ax.tick_params(axis="both", labelsize=60)
+    ax.tick_params(axis="x", rotation=0)
     ax.tick_params(axis="y", rotation=0)
-    ax.collections[0].colorbar.ax.tick_params(labelsize=20)
-    ax.collections[0].colorbar.ax.set_ylabel("ratio opt / ref", fontsize=40)
+    ax_cbar = ax.collections[0].colorbar.ax
+    ax_cbar.tick_params(labelsize=60)
+    ax_cbar.set_ylabel("ratio opt / ref", fontsize=70)
 
     figure.tight_layout()
-    figure.savefig("param_difference_mod.png")
+    figure.savefig("param_difference_mod.png", bbox_inches="tight")
     plt.close(figure)
 
     return True
 
 
-def param_rz(config):
+def param_rz(inspectors, config):
 
-    param_helper = ParamHelper(config)
+    param_helper = ParamHelper(inspectors[0], config)
     ref_params, opt_params = param_helper.sort_params_by_global_id()
 
     # load our geometry
@@ -231,98 +261,96 @@ def param_rz(config):
 
     return True
 
-
 def make_sorted_histos(histos):
-    x_axis = []
+  x_axis = []
 
-    for h in histos:
-      axis = h.GetXaxis()
-      for i in range(1, h.GetNbinsX() + 1):
-          bl = axis.GetBinLabel(i)
-          if bl in x_axis or not bl:
-              continue
-          x_axis.append(bl)
-    lab_to_id = {lab: i for i, lab in enumerate(x_axis)}
+  for h in histos:
+    axis = h.GetXaxis()
+    for i in range(1, h.GetNbinsX() + 1):
+      bl = axis.GetBinLabel(i)
+      if bl in x_axis or not bl:
+        continue
+      x_axis.append(bl)
+      lab_to_id = {lab: i for i, lab in enumerate(x_axis)}
 
-    sorted_histos = [[0] * len(x_axis) for _ in histos]
+  sorted_histos = [[0] * len(x_axis) for _ in histos]
 
-    for i, h in enumerate(histos):
-        axis = h.GetXaxis()
-        for b in range(1, h.GetNbinsX() + 1):
-            bl = axis.GetBinLabel(b)
-            if not bl:
-                continue
-            sorted_histos[i][lab_to_id[bl]] = h.GetBinContent(b)
+  for i, h in enumerate(histos):
+    axis = h.GetXaxis()
+    for b in range(1, h.GetNbinsX() + 1):
+      bl = axis.GetBinLabel(b)
+      if not bl:
+        continue
+      sorted_histos[i][lab_to_id[bl]] = h.GetBinContent(b)
 
-    return x_axis, sorted_histos
+  return x_axis, sorted_histos
 
 
 def overlay_histograms(x_axis, sorted_histos, labels, savepath, x_label="x_axis", y_label="y_axis", annotations=None):
 
-    if not labels:
-        labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
+  if not labels:
+    labels = [f"histo_{i}" for i, _ in enumerate(sorted_histos)]
 
-    fig, ax = plt.subplots(figsize=(40, 25))
+  fig, ax = plt.subplots(figsize=(30, 30))
 
-    hatches = [None, "/"]
+  hatches = [None, "/"]
 
-    for i, (h, l) in enumerate(zip(sorted_histos, labels)):
-        ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
+  for i, (h, l) in enumerate(zip(sorted_histos, labels)):
+    ax.bar(x_axis, h, alpha=0.5, label=l, hatch=hatches[i%len(hatches)])
 
-    ax.set_xlabel(x_label, fontsize=40)
-    ax.set_ylabel(y_label, fontsize=40)
-    ax.tick_params(axis="both", labelsize=20)
-    ax.tick_params(axis="x", rotation=45)
-    ax.tick_params(axis="y", rotation=0)
+  ax.set_xlabel(x_label, fontsize=70)
+  ax.set_ylabel(y_label, fontsize=70)
+  ax.tick_params(axis="both", labelsize=60)
+  ax.tick_params(axis="x", rotation=90)
+  ax.tick_params(axis="y", rotation=0)
 
-    ax.legend(loc="best", fontsize=40)
-    fig.tight_layout()
-    fig.savefig(savepath)
-    plt.close(fig)
+  ax.legend(loc="best", fontsize=70)
+  fig.tight_layout()
+  fig.savefig(savepath)
+  plt.close(fig)
 
 
-def step_analysis(config):
+def step_analysis(inspectors, config):
 
-    MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
-    param_helper = ParamHelper(config)
-    events = config["events"]
-    generator = config["generator"]
-    engine = config["engine"]
+  MCSTEPLOGGER_ROOT = environ.get("MCSTEPLOGGER_ROOT")
+  param_helper = ParamHelper(inspectors[0], config)
+  events = config["events"]
+  generator = config["generator"]
+  engine = config["engine"]
 
-    lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
-    preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
+  lib_extension = ".dylib" if os_system() == "Darwin" else ".so"
+  preload = "DYLD_INSERT_LIBRARIES" if os_system() == "Darwin" else "LD_PRELOAD"
 
-    cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
-          f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
-          f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
+  cmd = f'MCSTEPLOG_TTREE=1 {preload}={MCSTEPLOGGER_ROOT}/lib/libMCStepLoggerInterceptSteps{lib_extension} ' \
+  f'o2-sim-serial -n {events} -g extkinO2  -e {engine} --extKinFile {join(param_helper.ref_dir, "o2sim_Kine.root")} ' \
+  f'--skipModules ZDC --configKeyValues "MaterialManagerParam.inputFile={param_helper.opt_params_file}"'
 
-    run_command(cmd, log_file="steplogging.log")
+  run_command(cmd, log_file="steplogging.log")
 
-    cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
+  cmd = "mcStepAnalysis analyze -f {} -l {} -o {}"
 
-    # Run step analysis for ref
-    cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
-    run_command(cmd_ref)
-    # Run step analysis for opt
-    cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
-    run_command(cmd_opt)
+  # Run step analysis for ref
+  cmd_ref = cmd.format(join(param_helper.ref_dir, "MCStepLoggerOutput.root"), "ref_cuts", "ref_cuts")
+  run_command(cmd_ref)
+  # Run step analysis for opt
+  cmd_opt = cmd.format("MCStepLoggerOutput.root", "opt_cuts", "opt_cuts")
+  run_command(cmd_opt)
 
-    file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
-    file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+  file_ref = TFile(join("ref_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
+  file_opt = TFile(join("opt_cuts", "SimpleStepAnalysis", "Analysis.root"), "READ")
 
-    histos = [file_ref.Get("MCAnalysisObjects/nStepsPerMod"), file_opt.Get("MCAnalysisObjects/nStepsPerMod")]
-    labels = ["reference", "optimised"]
+  histos = [file_ref.Get("MCAnalysisObjects/nStepsPerMod"), file_opt.Get("MCAnalysisObjects/nStepsPerMod")]
+  labels = ["reference", "optimised"]
 
-    x_axis, sorted_histos = make_sorted_histos(histos)
+  x_axis, sorted_histos = make_sorted_histos(histos)
 
-    sum_ref = sum(sorted_histos[0])
+  sum_ref = sum(sorted_histos[0])
 
-    for sh in sorted_histos:
-        for i, c in enumerate(sh):
-            sh[i] = c / sum_ref
+  for sh in sorted_histos:
+    for i, c in enumerate(sh):
+      sh[i] = c / sum_ref
 
-    overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
-    overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
+  overlay_histograms(x_axis, sorted_histos[:1], labels[:1], "steps_per_mod_ref.png", x_label="modules", y_label="steps / sum(steps(ref))")
+  overlay_histograms(x_axis, sorted_histos, labels, "steps_per_mod_ref_opt.png", x_label="modules", y_label="steps / sum(steps(ref))")
 
-    return True
-
+  return True
